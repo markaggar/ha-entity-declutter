@@ -3,7 +3,7 @@ param(
     [string]$Environment = "dev",
     [string]$HAHost,
     [string]$PyScriptDest,
-    [string]$Token = $env:HA_TOKEN,
+    [string]$Token,
     [switch]$TestRun,
     [switch]$DumpLogs,
     [switch]$ForceCopy
@@ -15,11 +15,13 @@ $environments = @{
         Host = "10.0.0.55"
         PyScriptPath = "\\10.0.0.55\config\pyscript"
         Token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiI5NDFmMjE5OGJkN2M0NGZhOWZkODVhMmEyODRkZGRiMCIsImlhdCI6MTcyNzUyOTE4NywiZXhwIjoyMDQyODg5MTg3fQ.PQCXKoFqUYRR2LJwxsUxSFDhTnyMdTgWZF6HYZHq6HM"
+        EnvVar = "HA_DEV_TOKEN"
     }
     "prod" = @{
         Host = "10.0.0.26"
         PyScriptPath = "\\10.0.0.26\config\pyscript"
         Token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJmNjA4NGE1ZjE2ZWY0NDQ1OWUxNjU3MTNmZDg2NDJkOCIsImlhdCI6MTc1OTA4OTM3NywiZXhwIjoyMDc0NDQ5Mzc3fQ.oVj-uy96t5HWvH2Z_U-KDOTsF76uVJCdrOTWqwaTuiU"
+        EnvVar = "HA_PROD_TOKEN"
     }
 }
 
@@ -27,7 +29,18 @@ $environments = @{
 $currentEnv = $environments[$Environment]
 if (-not $HAHost) { $HAHost = $currentEnv.Host }
 if (-not $PyScriptDest) { $PyScriptDest = $currentEnv.PyScriptPath }
-if (-not $Token) { $Token = $currentEnv.Token }
+
+# Token selection priority: 1) Parameter, 2) Environment-specific env var, 3) Hardcoded fallback
+if (-not $Token) { 
+    $envToken = [Environment]::GetEnvironmentVariable($currentEnv.EnvVar)
+    if ($envToken) {
+        $Token = $envToken
+        Write-Host "Using token from $($currentEnv.EnvVar)" -ForegroundColor DarkGray
+    } else {
+        $Token = $currentEnv.Token 
+        Write-Host "Using hardcoded token for $Environment" -ForegroundColor DarkGray
+    }
+}
 
 # Track deployment status
 $script:deploymentFailed = $false
