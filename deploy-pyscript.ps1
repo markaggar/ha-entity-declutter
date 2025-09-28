@@ -140,7 +140,7 @@ if ($TestRun -and -not [string]::IsNullOrWhiteSpace($Token)) {
     # Test 2: Try running the enhanced analysis
     try {
         Write-Host "Running enhanced helper analysis test..." -ForegroundColor DarkGray
-        $analyzeUri = "$baseUrl/api/services/pyscript/analyze_helpers_enhanced"
+        $analyzeUri = "$baseUrl/api/services/pyscript/analyze_helpers"
         $response = Invoke-RestMethod -Method Post -Uri $analyzeUri -Headers $headers -Body '{}' -TimeoutSec 30
         Write-Host "✓ Enhanced analysis service called successfully" -ForegroundColor Green
         

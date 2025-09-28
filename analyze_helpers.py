@@ -24,11 +24,6 @@ def analyze_helpers(**kwargs):
     """Service wrapper - creates async task"""
     task.create(analyze_helpers_async())
 
-@service
-def analyze_helpers_enhanced(**kwargs):
-    """Enhanced service wrapper - creates async task"""
-    task.create(analyze_helpers_async())
-
 def is_helper_entity(entity_id):
     """Determine if an entity is a helper - expanded to match HA UI definition"""
     # Traditional input helpers
