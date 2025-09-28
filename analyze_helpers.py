@@ -871,6 +871,7 @@ async def analyze_helpers_async():
     
     # Find all entity references in configuration files
     all_referenced_entities = set()
+    config_referenced_entities = set()
     config_files = get_config_files()
     
     # Also check for lovelace configuration
@@ -905,11 +906,13 @@ async def analyze_helpers_async():
             if content:
                 entities_in_file = analyze_yaml_content(content, file_path)
                 all_referenced_entities.update(entities_in_file)
+                config_referenced_entities.update(entities_in_file)
                 
                 # Also check for direct entity ID references (not in templates)
                 for helper in helpers:
                     if helper in content:
                         all_referenced_entities.add(helper)
+                        config_referenced_entities.add(helper)
                         
         except Exception as e:
             log.warning(f"Error reading {file_path}: {e}")
@@ -944,35 +947,86 @@ async def analyze_helpers_async():
         log.error(f"Failed to create results directory: {e}")
         return
     
-    # Helper details for debugging
+    # Helper details with reference tracking
     helper_details = {}
+    dashboard_only_helpers = []
+    
     for helper in helpers:
         try:
             helper_state = state.get(helper)
+            
+            # Track where this helper is referenced
+            reference_sources = {
+                'config_files': [],
+                'templates': [],
+                'dashboards': [],
+                'total_references': 0
+            }
+            
+            # Check config file references
+            if helper in config_referenced_entities:
+                reference_sources['config_files'].append('configuration_files')
+                reference_sources['total_references'] += 1
+            
+            # Check template references  
+            if template_dependencies:
+                for template_file, entities in template_dependencies.items():
+                    if helper in entities:
+                        reference_sources['templates'].append(template_file)
+                        reference_sources['total_references'] += 1
+            
+            # Check dashboard references
+            if dashboard_referenced_entities and helper in dashboard_referenced_entities:
+                reference_sources['dashboards'].append('lovelace_dashboards')
+                reference_sources['total_references'] += 1
+            
+            # Determine helper category
+            helper_category = 'orphaned'
+            if reference_sources['total_references'] > 0:
+                if reference_sources['dashboards'] and not reference_sources['config_files'] and not reference_sources['templates']:
+                    helper_category = 'dashboard_only'
+                    dashboard_only_helpers.append(helper)
+                else:
+                    helper_category = 'actively_used'
+            
             helper_details[helper] = {
                 'domain': helper.split('.')[0],
                 'state': str(helper_state) if helper_state else 'unavailable',
-                'referenced': helper in all_referenced_entities
+                'referenced': helper in all_referenced_entities,
+                'category': helper_category,
+                'reference_sources': reference_sources
             }
         except Exception as e:
             helper_details[helper] = {
                 'domain': helper.split('.')[0],
                 'state': 'error',
                 'error': str(e),
-                'referenced': helper in all_referenced_entities
+                'referenced': helper in all_referenced_entities,
+                'category': 'error',
+                'reference_sources': {'config_files': [], 'templates': [], 'dashboards': [], 'total_references': 0}
             }
+    
+    # Count helpers by category
+    actively_used_helpers = [h for h, details in helper_details.items() if details['category'] == 'actively_used']
+    truly_orphaned_helpers = [h for h, details in helper_details.items() if details['category'] == 'orphaned']
     
     # Save detailed JSON report
     detailed_report = {
         'analysis': {
             'total_helpers': len(helpers),
-            'referenced_count': len(referenced_helpers),
-            'orphaned_count': len(unreferenced_helpers),
-            'config_files_analyzed': len(config_files)
+            'actively_used': len(actively_used_helpers),
+            'dashboard_only': len(dashboard_only_helpers),
+            'truly_orphaned': len(truly_orphaned_helpers),
+            'config_files_analyzed': len(config_files),
+            'template_files_analyzed': len(template_dependencies) if template_dependencies else 0,
+            'dashboards_analyzed': 1 if dashboard_referenced_entities else 0
         },
         'helpers': helper_details,
-        'referenced_helpers': referenced_helpers,
-        'potentially_orphaned': unreferenced_helpers,
+        'helper_categories': {
+            'actively_used': actively_used_helpers,
+            'dashboard_only': dashboard_only_helpers,
+            'truly_orphaned': truly_orphaned_helpers
+        },
         'config_files': config_files
     }
     
@@ -1047,22 +1101,23 @@ async def analyze_helpers_async():
     # Log completion
     log.info("=== HELPER ANALYSIS RESULTS ===")
     log.info(f"Total helpers analyzed: {len(helpers)}")
-    log.info(f"Helpers with references: {len(referenced_helpers)}")
-    log.info(f"Potentially orphaned: {len(unreferenced_helpers)}")
+    log.info(f"Actively used (in config/templates): {len(actively_used_helpers)}")
+    log.info(f"Dashboard only: {len(dashboard_only_helpers)}")
+    log.info(f"Truly orphaned: {len(truly_orphaned_helpers)}")
     
-    if unreferenced_helpers:
-        log.info("\nPOTENTIALLY ORPHANED HELPERS:")
-        for helper in sorted(unreferenced_helpers)[:10]:
+    if dashboard_only_helpers:
+        log.info("\nDASHBOARD-ONLY HELPERS (potential cleanup candidates):")
+        for helper in sorted(dashboard_only_helpers)[:10]:
             log.info(f"  - {helper}")
-        if len(unreferenced_helpers) > 10:
-            log.info(f"  ... and {len(unreferenced_helpers) - 10} more")
+        if len(dashboard_only_helpers) > 10:
+            log.info(f"  ... and {len(dashboard_only_helpers) - 10} more")
     
-    if referenced_helpers:
-        log.info("\nHELPERS WITH REFERENCES (first 10):")
-        for helper in sorted(referenced_helpers)[:10]:
+    if truly_orphaned_helpers:
+        log.info("\nTRULY ORPHANED HELPERS:")
+        for helper in sorted(truly_orphaned_helpers)[:10]:
             log.info(f"  - {helper}")
-        if len(referenced_helpers) > 10:
-            log.info(f"  ... and {len(referenced_helpers) - 10} more")
+        if len(truly_orphaned_helpers) > 10:
+            log.info(f"  ... and {len(truly_orphaned_helpers) - 10} more")
     
     log.info(f"\nReports saved to: {results_dir}")
     log.info("=== HELPER ANALYSIS COMPLETE ===")

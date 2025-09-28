@@ -164,7 +164,7 @@ if ($TestRun -and -not [string]::IsNullOrWhiteSpace($Token)) {
     try {
         Write-Host "Running enhanced helper analysis test..." -ForegroundColor DarkGray
         $analyzeUri = "$baseUrl/api/services/pyscript/analyze_helpers"
-        $response = Invoke-RestMethod -Method Post -Uri $analyzeUri -Headers $headers -Body '{}' -TimeoutSec 30
+        $response = Invoke-RestMethod -Method Post -Uri $analyzeUri -Headers $headers -Body '{}' -TimeoutSec 180
         Write-Host "✓ Enhanced analysis service called successfully" -ForegroundColor Green
         
         # Wait for analysis to complete
@@ -203,7 +203,7 @@ if ($DumpLogs -or $script:deploymentFailed) {
     if (-not [string]::IsNullOrWhiteSpace($Token)) {
         Write-Host "`n=== Home Assistant Logs ===" -ForegroundColor Cyan
         try {
-            $logUri = "http://10.0.0.55:8123/api/error_log"
+            $logUri = "$baseUrl/api/error_log"
             $logHeaders = @{ Authorization = "Bearer $Token"; 'Accept' = 'text/plain' }
             $logContent = Invoke-RestMethod -Method Get -Uri $logUri -Headers $logHeaders -TimeoutSec 20
             
