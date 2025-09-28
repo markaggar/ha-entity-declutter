@@ -556,7 +556,7 @@ def analyze_template_dependencies():
     log.info(f"Template analysis complete: {len(template_dependencies)} templates with dependencies")
     return template_dependencies
 
-def analyze_dashboard_dependencies():
+async def analyze_dashboard_dependencies():
     """Analyze Lovelace dashboards to find entity references"""
     dashboard_dependencies = set()
     
@@ -599,8 +599,7 @@ def analyze_dashboard_dependencies():
                 continue
                 
             log.info(f"Analyzing dashboard file: {dash_file}")
-            with builtins.open(dash_file, 'r', encoding='utf-8') as f:
-                content = f.read()
+            content = await task.executor(lambda path: builtins.open(path, 'r', encoding='utf-8').read(), dash_file)
             
             # Extract entities from dashboard content
             entities = extract_dashboard_entities(content)
@@ -622,17 +621,23 @@ def extract_dashboard_entities(dashboard_content):
     
     entities = set()
     
-    # Patterns for dashboard entity references
+    # Comprehensive patterns for dashboard entity references (including complex names)
     patterns = [
-        r"entity:\s*([a-z0-9_]+\.[a-z0-9_]+)",  # entity: sensor.example
-        r"entities:\s*\n(?:\s*-\s*([a-z0-9_]+\.[a-z0-9_]+))+",  # entities list
-        r"-\s*entity:\s*([a-z0-9_]+\.[a-z0-9_]+)",  # - entity: sensor.example  
-        r"-\s*([a-z0-9_]+\.[a-z0-9_]+)",  # - sensor.example (direct entity)
+        r"entity:\s*['\"]?([a-z0-9_]+\.[a-z0-9_]+)['\"]?",  # entity: sensor.example or entity: "sensor.example"
+        r"entities:\s*\n(?:\s*-\s*['\"]?([a-z0-9_]+\.[a-z0-9_]+)['\"]?)+",  # entities list
+        r"-\s*entity:\s*['\"]?([a-z0-9_]+\.[a-z0-9_]+)['\"]?",  # - entity: sensor.example  
+        r"-\s*['\"]?([a-z0-9_]+\.[a-z0-9_]+)['\"]?",  # - sensor.example (direct entity)
         r"'([a-z0-9_]+\.[a-z0-9_]+)'",  # 'sensor.example'
         r'"([a-z0-9_]+\.[a-z0-9_]+)"',  # "sensor.example"
-        r"sensor:\s*([a-z0-9_]+\.[a-z0-9_]+)",  # sensor: sensor.example
-        r"binary_sensor:\s*([a-z0-9_]+\.[a-z0-9_]+)",  # binary_sensor: binary_sensor.example
-        r"input_[a-z_]+:\s*([a-z0-9_]+\.[a-z0-9_]+)",  # input_boolean: input_boolean.example
+        r"sensor:\s*['\"]?([a-z0-9_]+\.[a-z0-9_]+)['\"]?",  # sensor: sensor.example
+        r"binary_sensor:\s*['\"]?([a-z0-9_]+\.[a-z0-9_]+)['\"]?",  # binary_sensor: binary_sensor.example
+        r"input_[a-z_]+:\s*['\"]?([a-z0-9_]+\.[a-z0-9_]+)['\"]?",  # input_boolean: input_boolean.example
+        r"card_config.*?entity.*?['\"]([a-z0-9_]+\.[a-z0-9_]+)['\"]",  # card config entity references
+        r"tap_action.*?entity.*?['\"]([a-z0-9_]+\.[a-z0-9_]+)['\"]",  # tap action entity references
+        r"hold_action.*?entity.*?['\"]([a-z0-9_]+\.[a-z0-9_]+)['\"]",  # hold action entity references
+        r"action.*?service_data.*?entity_id.*?['\"]([a-z0-9_]+\.[a-z0-9_]+)['\"]",  # service action entity_id
+        # More flexible pattern for any entity ID in quotes (catches complex names like lock_code_slot_x_name)
+        r"['\"]([a-z_]+\.[a-z0-9_]+)['\"]"
     ]
     
     for pattern in patterns:
@@ -858,7 +863,7 @@ async def analyze_helpers_async():
     # Analyze dashboard dependencies
     log.info("=== Analyzing Dashboard Dependencies ===")
     try:
-        dashboard_referenced_entities = await task.executor(lambda: analyze_dashboard_dependencies())
+        dashboard_referenced_entities = await analyze_dashboard_dependencies()
         if dashboard_referenced_entities:
             dashboard_ref_list = list(dashboard_referenced_entities)
             dashboard_ref_list.sort()
