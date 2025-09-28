@@ -1,17 +1,40 @@
 param(
-    [string]$HAHost = "10.0.0.55",
-    [string]$PyScriptDest = "\\10.0.0.55\config\pyscript",
+    [ValidateSet("dev", "prod")]
+    [string]$Environment = "dev",
+    [string]$HAHost,
+    [string]$PyScriptDest,
     [string]$Token = $env:HA_TOKEN,
     [switch]$TestRun,
     [switch]$DumpLogs,
     [switch]$ForceCopy
 )
 
+# Environment-specific configuration
+$environments = @{
+    "dev" = @{
+        Host = "10.0.0.55"
+        PyScriptPath = "\\10.0.0.55\config\pyscript"
+        Token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiI5NDFmMjE5OGJkN2M0NGZhOWZkODVhMmEyODRkZGRiMCIsImlhdCI6MTcyNzUyOTE4NywiZXhwIjoyMDQyODg5MTg3fQ.PQCXKoFqUYRR2LJwxsUxSFDhTnyMdTgWZF6HYZHq6HM"
+    }
+    "prod" = @{
+        Host = "10.0.0.26"
+        PyScriptPath = "\\10.0.0.26\config\pyscript"
+        Token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJmNjA4NGE1ZjE2ZWY0NDQ1OWUxNjU3MTNmZDg2NDJkOCIsImlhdCI6MTc1OTA4OTM3NywiZXhwIjoyMDc0NDQ5Mzc3fQ.oVj-uy96t5HWvH2Z_U-KDOTsF76uVJCdrOTWqwaTuiU"
+    }
+}
+
+# Use environment-specific settings or override with parameters
+$currentEnv = $environments[$Environment]
+if (-not $HAHost) { $HAHost = $currentEnv.Host }
+if (-not $PyScriptDest) { $PyScriptDest = $currentEnv.PyScriptPath }
+if (-not $Token) { $Token = $currentEnv.Token }
+
 # Track deployment status
 $script:deploymentFailed = $false
 $filesCopied = $false
 
 Write-Host "=== PyScript Helper Analysis Deployment ===" -ForegroundColor Cyan
+Write-Host "Environment: $Environment ($HAHost)" -ForegroundColor Cyan
 Write-Host "Target: $PyScriptDest" -ForegroundColor Cyan
 
 # Get script directory and source files
@@ -98,7 +121,7 @@ if (-not $filesCopied) {
 
 # Test PyScript services if requested
 if ($TestRun -and -not [string]::IsNullOrWhiteSpace($Token)) {
-    $baseUrl = "http://10.0.0.55:8123"
+    $baseUrl = "http://${HAHost}:8123"
     Write-Host "Base URL: $baseUrl" -ForegroundColor DarkGray
     $headers = @{ 
         Authorization = "Bearer $Token"
