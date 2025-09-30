@@ -26,33 +26,31 @@ On a production system with 484 helpers, this tool achieved:
 
 ### Prerequisites
 - Home Assistant with [PyScript](https://github.com/custom-components/pyscript) custom component installed
-- Network share access to your Home Assistant config directory
-- PowerShell (for deployment script)
 
 ### Installation
 
-1. **Clone the repository**:
+1. **Install PyScript** (if not already installed):
+   - Install via HACS or manually following [PyScript installation guide](https://github.com/custom-components/pyscript)
+
+2. **Add PyScript to configuration.yaml**:
+   ```yaml
+   pyscript:
+   ```
+
+3. **Create required directories**:
    ```bash
-   git clone https://github.com/marka/ha-entity-declutter.git
-   cd ha-entity-declutter
+   # In your Home Assistant config directory:
+   mkdir pyscript
+   mkdir helper_analysis
    ```
 
-2. **Configure environment variables** (optional but recommended):
-   ```powershell
-   $env:HA_DEV_TOKEN = "your_dev_token_here"
-   $env:HA_PROD_TOKEN = "your_prod_token_here"
-   ```
+4. **Download and copy the Python scripts**:
+   - Download `analyze_helpers.py` and `delete_helpers.py` from this repository
+   - Copy both files to your `/config/pyscript/` directory
 
-3. **Deploy to Home Assistant**:
-   ```powershell
-   # Deploy to development environment
-   .\deploy-pyscript.ps1 -Environment dev
-   
-   # Deploy to production environment  
-   .\deploy-pyscript.ps1 -Environment prod
-   ```
+5. **Restart Home Assistant** to load the PyScript components
 
-4. **Run the analysis**:
+6. **Run the analysis**:
    - Go to **Developer Tools → Services** in Home Assistant
    - Run service: `pyscript.analyze_helpers`
    - Check `/config/helper_analysis/` for results
@@ -83,22 +81,10 @@ Simply copy the contents of `helper_review_cards.yaml` into a new dashboard card
 
 ## 🔧 Configuration
 
-### Environment Setup
-
-Update `deploy-pyscript.ps1` with your Home Assistant details:
-
-```powershell
-$environments = @{
-    "dev" = @{
-        Host = "your.dev.ip"
-        PyScriptPath = "\\your.dev.ip\config\pyscript"
-    }
-    "prod" = @{
-        Host = "your.prod.ip"  
-        PyScriptPath = "\\your.prod.ip\config\pyscript"
-    }
-}
-```
+No additional configuration is required. The scripts will automatically:
+- Detect your Home Assistant configuration structure
+- Analyze all helper types and their dependencies
+- Generate reports in `/config/helper_analysis/`
 
 ### Supported Helper Types
 
@@ -120,10 +106,10 @@ The tool detects all Home Assistant helper integrations:
 
 ## 🛠️ Files
 
-- **`analyze_helpers.py`**: Main analysis script (PyScript)
-- **`delete_helpers.py`**: Safe deletion script (PyScript)  
-- **`deploy-pyscript.ps1`**: Multi-environment deployment tool
-- **`mcp.json`**: MCP server configuration
+- **`analyze_helpers.py`**: Main analysis script - copy to `/config/pyscript/`
+- **`delete_helpers.py`**: Safe deletion script - copy to `/config/pyscript/`  
+- **`deploy-pyscript.ps1`**: Development deployment tool (for contributors)
+- **`README.md`**: This documentation
 
 ## 🤝 Contributing
 
