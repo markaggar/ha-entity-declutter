@@ -305,10 +305,15 @@ def examine_entity_registry():
             with builtins.open(config_entries_file, 'r', encoding='utf-8') as f:
                 config_entries = json.load(f)
             
+            # Comprehensive list of all helper integrations from Home Assistant
             helper_integration_domains = [
-                'template', 'statistics', 'utility_meter', 'history_stats', 'integral', 'derivative',
-                'threshold', 'trend', 'group', 'counter', 'timer', 'combine', 'times_of_the_day',
-                'mold_indicator', 'manual', 'switch_as_x'
+                'change_device_type_of_a_switch', 'counter', 'derivative', 'filter', 
+                'generic_hygrostat', 'generic_thermostat', 'group', 'history_stats', 
+                'input_boolean', 'input_button', 'input_datetime', 'input_number', 
+                'input_select', 'input_text', 'integral', 'manual_alarm_control_panel', 
+                'min_max', 'mold_indicator', 'random', 'schedule', 'statistics', 
+                'template', 'threshold', 'timer', 'times_of_the_day', 'trend', 
+                'utility_meter'
             ]
             config_helper_count = 0
             
@@ -316,11 +321,22 @@ def examine_entity_registry():
                 domain = entry.get('domain', '')
                 title = entry.get('title', 'N/A')
                 
+                # Check if domain matches helper integrations or title indicates helper
+                title_lower = title.lower()
                 if (domain in helper_integration_domains or 
-                    'sensor' in title.lower() and any(keyword in title.lower() 
-                        for keyword in ['integral', 'derivative', 'threshold', 'trend', 'history', 'combine', 'mold']) or
-                    'switch' in title.lower() and 'device type' in title.lower() or
-                    'alarm control panel' in title.lower()):
+                    # Template/sensor helpers
+                    any(keyword in title_lower for keyword in [
+                        'integral', 'derivative', 'threshold', 'trend', 'history', 'combine', 'mold',
+                        'template', 'statistics', 'utility meter', 'filter', 'min max', 'random'
+                    ]) or
+                    # Switch helpers
+                    'device type' in title_lower or
+                    # Thermostat helpers  
+                    any(keyword in title_lower for keyword in ['hygrostat', 'thermostat']) or
+                    # Alarm helpers
+                    'alarm control panel' in title_lower or
+                    # Schedule helpers
+                    'schedule' in title_lower):
                     config_helper_count += 1
                     log.info(f"Helper integration found - Domain: {domain}, Title: {title}")
             
@@ -560,25 +576,38 @@ async def analyze_dashboard_dependencies():
     """Analyze Lovelace dashboards to find entity references"""
     dashboard_dependencies = set()
     
-    # Comprehensive list of dashboard file locations
-    dashboard_files = [
+    # Focus on actual dashboard storage locations where UI dashboards are stored
+    dashboard_files = []
+    
+    # Primary focus: .storage/lovelace* files (where UI-controlled dashboards live)
+    try:
+        storage_dir = '/config/.storage'
+        if os.path.isdir(storage_dir):
+            storage_files = os.listdir(storage_dir)
+            for filename in storage_files:
+                if filename.startswith('lovelace'):
+                    full_path = os.path.join(storage_dir, filename)
+                    if os.path.isfile(full_path):
+                        dashboard_files.append(full_path)
+                        log.info(f"Found dashboard storage file: {filename}")
+    except Exception as e:
+        log.info(f"Could not scan .storage directory: {e}")
+    
+    # Also check traditional YAML dashboard files
+    yaml_dashboard_files = [
         '/config/ui-lovelace.yaml',
         '/config/lovelace.yaml',
-        '/config/lovelace/main.yaml',
         '/config/dashboards/main.yaml',
-        '/config/dashboards/lovelace.yaml',
-        '/config/.storage/lovelace',
-        '/config/.storage/lovelace.main',
-        '/config/.storage/lovelace_dashboards'
+        '/config/dashboards/lovelace.yaml'
     ]
     
-    # Also check for dashboard directories
-    dashboard_dirs = [
-        '/config/dashboards/',
-        '/config/lovelace/',
-        '/config/ui/'
-    ]
+    for yaml_file in yaml_dashboard_files:
+        if os.path.isfile(yaml_file):
+            dashboard_files.append(yaml_file)
+            log.info(f"Found YAML dashboard file: {yaml_file}")
     
+    # Check dashboard directories for additional files
+    dashboard_dirs = ['/config/dashboards/', '/config/lovelace/']
     for dash_dir in dashboard_dirs:
         try:
             if os.path.isdir(dash_dir):
@@ -756,6 +785,101 @@ def get_config_files():
                     config_files.append(os.path.join(root, file))
     
     return config_files
+
+def generate_lovelace_cards(truly_orphaned_helpers, dashboard_only_helpers):
+    """Generate Lovelace YAML for horizontal stack with entities cards for helper review"""
+    
+    # Sort the lists for consistent output
+    orphaned_sorted = sorted(truly_orphaned_helpers) if truly_orphaned_helpers else []
+    dashboard_sorted = sorted(dashboard_only_helpers) if dashboard_only_helpers else []
+    
+    # Split long lists into chunks for better UI display (max 20 entities per card)
+    def chunk_list(lst, chunk_size=20):
+        return [lst[i:i + chunk_size] for i in range(0, len(lst), chunk_size)]
+    
+    orphaned_chunks = chunk_list(orphaned_sorted, 20)
+    dashboard_chunks = chunk_list(dashboard_sorted, 20)
+    
+    yaml_content = "# Auto-generated Helper Review Cards\n"
+    yaml_content += "# Copy this YAML into a dashboard to review orphaned and dashboard-only helpers\n"
+    yaml_content += "# Generated by PyScript Helper Analysis\n\n"
+    
+    # Create horizontal stack with two columns
+    yaml_content += "type: horizontal-stack\n"
+    yaml_content += "cards:\n"
+    
+    # Left column: Truly Orphaned Helpers
+    yaml_content += "  - type: vertical-stack\n"
+    yaml_content += "    cards:\n"
+    
+    if orphaned_chunks:
+        for i, chunk in enumerate(orphaned_chunks):
+            card_title = f"🗑️ Truly Orphaned Helpers"
+            if len(orphaned_chunks) > 1:
+                card_title += f" ({i+1}/{len(orphaned_chunks)})"
+            
+            yaml_content += f"      - type: entities\n"
+            yaml_content += f"        title: \"{card_title}\"\n"
+            yaml_content += f"        state_color: true\n"
+            yaml_content += f"        show_header_toggle: false\n"
+            yaml_content += f"        entities:\n"
+            
+            for entity in chunk:
+                yaml_content += f"          - entity: {entity}\n"
+                yaml_content += f"            name: {entity}\n"
+            
+            yaml_content += f"        footer:\n"
+            yaml_content += f"          type: graph\n"
+            yaml_content += f"          entity: sensor.helper_analysis_status\n"
+            yaml_content += f"          detail: 1\n"
+    else:
+        yaml_content += "      - type: entities\n"
+        yaml_content += "        title: \"🎉 No Truly Orphaned Helpers\"\n"
+        yaml_content += "        entities:\n"
+        yaml_content += "          - type: custom:text-element\n"
+        yaml_content += "            text: \"All helpers are being used!\"\n"
+    
+    # Right column: Dashboard-Only Helpers
+    yaml_content += "  - type: vertical-stack\n"
+    yaml_content += "    cards:\n"
+    
+    if dashboard_chunks:
+        for i, chunk in enumerate(dashboard_chunks):
+            card_title = f"📊 Dashboard-Only Helpers"
+            if len(dashboard_chunks) > 1:
+                card_title += f" ({i+1}/{len(dashboard_chunks)})"
+            
+            yaml_content += f"      - type: entities\n"
+            yaml_content += f"        title: \"{card_title}\"\n"
+            yaml_content += f"        state_color: true\n"
+            yaml_content += f"        show_header_toggle: false\n"
+            yaml_content += f"        entities:\n"
+            
+            for entity in chunk:
+                yaml_content += f"          - entity: {entity}\n"
+                yaml_content += f"            name: {entity}\n"
+            
+            yaml_content += f"        footer:\n"
+            yaml_content += f"          type: graph\n"
+            yaml_content += f"          entity: sensor.helper_analysis_status\n"
+            yaml_content += f"          detail: 1\n"
+    else:
+        yaml_content += "      - type: entities\n"
+        yaml_content += "        title: \"📊 No Dashboard-Only Helpers\"\n"
+        yaml_content += "        entities:\n"
+        yaml_content += "          - type: custom:text-element\n"
+        yaml_content += "            text: \"No helpers are dashboard-only!\"\n"
+    
+    # Add summary card at the bottom
+    yaml_content += "\n# Summary Information Card (add separately if desired)\n"
+    yaml_content += "# type: entities\n"
+    yaml_content += "# title: \"📈 Helper Analysis Summary\"\n"
+    yaml_content += "# entities:\n"
+    yaml_content += "#   - sensor.helper_analysis_status\n"
+    yaml_content += f"#   - type: custom:text-element\n"
+    yaml_content += f"#     text: \"Truly Orphaned: {len(orphaned_sorted)} | Dashboard-Only: {len(dashboard_sorted)}\"\n"
+    
+    return yaml_content
 
 @time_trigger("startup")
 def analyze_helpers_startup():
@@ -1083,6 +1207,15 @@ async def analyze_helpers_async():
         await task.executor(lambda path, content: builtins.open(path, 'w', encoding='utf-8').write(content), summary_file, summary_content)
     except Exception as e:
         log.error(f"Failed to write summary report: {e}")
+    
+    # Generate Lovelace entities cards YAML
+    lovelace_file = os.path.join(results_dir, 'helper_review_cards.yaml')
+    try:
+        lovelace_content = generate_lovelace_cards(truly_orphaned_helpers, dashboard_only_helpers)
+        await task.executor(lambda path, content: builtins.open(path, 'w', encoding='utf-8').write(content), lovelace_file, lovelace_content)
+        log.info(f"Generated Lovelace review cards: {lovelace_file}")
+    except Exception as e:
+        log.error(f"Failed to write Lovelace cards file: {e}")
     
     # Update status sensor
     try:
