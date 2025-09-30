@@ -53,8 +53,8 @@ On a production system with 484 helpers, this tool achieved:
 5. **Restart Home Assistant** to load the PyScript components
 
 6. **Run the analysis**:
-   - Go to **Developer Tools → Services** in Home Assistant
-   - Run service: `pyscript.analyze_helpers`
+   - Go to **Developer Tools → Actions** in Home Assistant
+   - Run action: `pyscript.analyze_helpers`
    - Check `/config/helper_analysis/` for results
 
 ## 📁 Output Files
