@@ -35,6 +35,8 @@ On a production system with 484 helpers, this tool achieved:
 2. **Add PyScript to configuration.yaml**:
    ```yaml
    pyscript:
+     allow_all_imports: true
+     hass_is_global: true
    ```
 
 3. **Create required directories**:
