@@ -35,19 +35,12 @@ async def delete_helpers_async():
     # Find the orphaned helpers file
     results_dir = '/config/helper_analysis'
     
-    if not os.path.exists(results_dir):
-        log.error(f"Results directory not found: {results_dir}")
-        log.error("Run pyscript.analyze_helpers first to generate the analysis files")
-        return
-    
-    if orphaned_file is None:
-        # Use the standard orphaned helpers file
-        orphaned_file = os.path.join(results_dir, 'orphaned_helpers.txt')
+    if os.path.exists(results_dir):
+        if orphaned_file is None:
+            # Use the standard orphaned helpers file
+            orphaned_file = os.path.join(results_dir, 'orphaned_helpers.txt')
         
-        if not os.path.exists(orphaned_file):
-            log.error("Orphaned helpers file not found: " + orphaned_file)
-            log.error("Run pyscript.analyze_helpers first")
-            return
+        if os.path.exists(orphaned_file):
     
     log.info(f"Using orphaned helpers file: {orphaned_file}")
     
