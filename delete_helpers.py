@@ -10,13 +10,9 @@ import os
 import builtins
 
 @service
-def delete_helpers(**kwargs):
-    """Service version - creates async task"""
-    dry_run = kwargs.get('dry_run', True)
-    orphaned_file = kwargs.get('orphaned_file', None)
-    
-    # Don't return anything from service functions - just start the task
-    task.create(delete_helpers_async(dry_run, orphaned_file))
+def delete_helpers():
+    """Service wrapper - creates async task"""
+    task.create(delete_helpers_async())
 
 async def delete_helpers_async(dry_run=True, orphaned_file=None):
     """
@@ -236,12 +232,9 @@ async def delete_helpers_async(dry_run=True, orphaned_file=None):
     }
 
 @service
-def restore_helpers(**kwargs):
-    """Service version - creates async task"""
-    backup_file = kwargs.get('backup_file', None)
-    
-    # Don't return anything from service functions - just start the task
-    task.create(restore_helpers_async(backup_file))
+def restore_helpers():
+    """Service wrapper - creates async task"""
+    task.create(restore_helpers_async())
 
 async def restore_helpers_async(backup_file=None):
     """

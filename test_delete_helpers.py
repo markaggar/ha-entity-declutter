@@ -5,7 +5,7 @@ import builtins
 import os
 
 @service
-def test_file_operations(**kwargs):
+def test_file_operations():
     """Test if file operations work in PyScript"""
     task.create(test_file_operations_async())
 
