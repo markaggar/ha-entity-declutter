@@ -142,8 +142,28 @@ async def delete_helpers_async():
         
         log.info("")
         log.info("To actually delete these helpers, call:")
-        log.info("  pyscript.delete_helpers(dry_run=False)")
+        log.info("  pyscript.delete_helpers_execute")
         log.info(f"Backup file created: {backup_file}")
+        
+        # Also create a summary file for easy review
+        summary_file = f"{results_dir}/deletion_preview.txt"
+        summary_content = "HELPER DELETION PREVIEW (DRY RUN)\n"
+        summary_content += "=" * 40 + "\n\n"
+        summary_content += f"Found {len(existing_helpers)} helpers to delete:\n\n"
+        
+        for helper in existing_helpers:
+            helper_state = state.get(helper)
+            friendly_name = helper_state.attributes.get('friendly_name', '') if helper_state else ''
+            summary_content += f"  • {helper}"
+            if friendly_name:
+                summary_content += f" ({friendly_name})"
+            summary_content += "\n"
+        
+        summary_content += f"\nTo execute deletion, call: pyscript.delete_helpers_execute\n"
+        summary_content += f"Backup file: {backup_file}\n"
+        
+        await task.executor(lambda path, content: builtins.open(path, 'w', encoding='utf-8').write(content), summary_file, summary_content)
+        log.info(f"Deletion preview saved to: {summary_file}")
         return
     
     # Actual deletion
