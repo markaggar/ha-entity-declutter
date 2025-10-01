@@ -10,9 +10,9 @@ import os
 import builtins
 
 @service
-def delete_helpers():
+def delete_helpers(dry_run=True, orphaned_file=None):
     """Service wrapper - creates async task"""
-    task.create(delete_helpers_async())
+    task.create(delete_helpers_async(dry_run, orphaned_file))
 
 async def delete_helpers_async(dry_run=True, orphaned_file=None):
     """
@@ -31,7 +31,7 @@ async def delete_helpers_async(dry_run=True, orphaned_file=None):
     if not os.path.exists(results_dir):
         log.error(f"Results directory not found: {results_dir}")
         log.error("Run pyscript.analyze_helpers first to generate the analysis files")
-        return {'success': False, 'error': 'No analysis files found'}
+        return
     
     if orphaned_file is None:
         # Use the standard orphaned helpers file
@@ -40,7 +40,7 @@ async def delete_helpers_async(dry_run=True, orphaned_file=None):
         if not os.path.exists(orphaned_file):
             log.error("Orphaned helpers file not found: " + orphaned_file)
             log.error("Run pyscript.analyze_helpers first")
-            return {'success': False, 'error': 'Orphaned helpers file not found'}
+            return
     
     log.info(f"Using orphaned helpers file: {orphaned_file}")
     
@@ -74,11 +74,11 @@ async def delete_helpers_async(dry_run=True, orphaned_file=None):
     
     except Exception as e:
         log.error(f"Error reading orphaned helpers file: {e}")
-        return {'success': False, 'error': str(e)}
+        return
     
     if not helpers_to_delete:
         log.info("No helpers to delete found in file")
-        return {'success': True, 'deleted_count': 0, 'message': 'No helpers to delete'}
+        return
     
     log.info(f"Found {len(helpers_to_delete)} helpers to delete")
     
@@ -97,7 +97,7 @@ async def delete_helpers_async(dry_run=True, orphaned_file=None):
     
     if not existing_helpers:
         log.info("No existing helpers to delete")
-        return {'success': True, 'deleted_count': 0, 'message': 'All helpers already removed'}
+        return
     
     # Create backup before deletion
     backup_file = f"{results_dir}/deletion_backup.json"
@@ -136,14 +136,8 @@ async def delete_helpers_async(dry_run=True, orphaned_file=None):
         log.info("")
         log.info("To actually delete these helpers, call:")
         log.info("  pyscript.delete_helpers(dry_run=False)")
-        
-        return {
-            'success': True,
-            'dry_run': True,
-            'would_delete_count': len(existing_helpers),
-            'helpers_to_delete': existing_helpers,
-            'backup_file': backup_file
-        }
+        log.info(f"Backup file created: {backup_file}")
+        return
     
     # Actual deletion
     log.info("=== PERFORMING ACTUAL DELETION ===")
@@ -219,22 +213,12 @@ async def delete_helpers_async(dry_run=True, orphaned_file=None):
         log.info(f"Failed deletions: {len(failed_deletions)}")
         log.info("Check deletion report for details")
     log.info(f"Deletion report: {report_file}")
-    
-    return {
-        'success': True,
-        'dry_run': False,
-        'deleted_count': len(deleted_helpers),
-        'failed_count': len(failed_deletions),
-        'deleted_helpers': deleted_helpers,
-        'failed_deletions': failed_deletions,
-        'backup_file': backup_file,
-        'report_file': report_file
-    }
+    log.info("=== Delete Helpers Task Complete ===")
 
 @service
-def restore_helpers():
+def restore_helpers(backup_file=None):
     """Service wrapper - creates async task"""
-    task.create(restore_helpers_async())
+    task.create(restore_helpers_async(backup_file))
 
 async def restore_helpers_async(backup_file=None):
     """
@@ -257,7 +241,7 @@ async def restore_helpers_async(backup_file=None):
         
         if not backup_files:
             log.error("No backup files found")
-            return {'success': False, 'error': 'No backup files found'}
+            return
         
         backup_file = max(backup_files, key=os.path.getmtime)
     
@@ -287,12 +271,8 @@ async def restore_helpers_async(backup_file=None):
                 log.info(f"  State: {state_info['state']}")
                 log.info(f"  Attributes: {state_info['attributes']}")
         
-        return {
-            'success': True,
-            'message': 'Backup info logged. Manual reconfiguration required.',
-            'helpers_in_backup': helpers_to_restore
-        }
+        log.info("=== Backup info logged. Manual reconfiguration required ===")
         
     except Exception as e:
         log.error(f"Error reading backup file: {e}")
-        return {'success': False, 'error': str(e)}
+        return
