@@ -42,8 +42,9 @@ async def delete_helpers_simple_async():
                 for helper in helpers_to_delete:
                     if state.get(helper):
                         existing_helpers.append(helper)
-                        helper_state = state.get(helper)
-                        friendly_name = helper_state.attributes.get('friendly_name', '') if helper_state else ''
+                        # Use state.getattr() like the working analyze_helpers.py
+                        attrs = state.getattr(helper) or {}
+                        friendly_name = attrs.get('friendly_name', '') if attrs else ''
                         log.info(f"  • {helper} ({friendly_name})")
                 
                 if existing_helpers:
