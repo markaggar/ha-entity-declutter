@@ -10,18 +10,25 @@ import os
 import builtins
 
 @service
-def delete_helpers(dry_run=True, orphaned_file=None):
-    """Service wrapper - creates async task"""
-    task.create(delete_helpers_async(dry_run, orphaned_file))
+def delete_helpers(**kwargs):
+    """Service wrapper - creates async task for dry run deletion"""
+    task.create(delete_helpers_async())
 
-async def delete_helpers_async(dry_run=True, orphaned_file=None):
+@service  
+def delete_helpers_execute(**kwargs):
+    """Service wrapper - creates async task for actual deletion"""
+    task.create(delete_helpers_execute_async())
+
+async def delete_helpers_async():
     """
     Delete helpers listed in the orphaned helpers file
     
-    Args:
-        dry_run (bool): If True, only log what would be deleted without actually deleting
-        orphaned_file (str): Path to the orphaned helpers file. If None, uses the most recent file.
+    Note: Parameters handled via global variables due to PyScript limitations
     """
+    
+    # Default parameters - could be made configurable via input_boolean entities
+    dry_run = True  # Default to dry run for safety
+    orphaned_file = None  # Use default file
     
     log.info("=== Starting Helper Deletion Process ===")
     
@@ -215,18 +222,204 @@ async def delete_helpers_async(dry_run=True, orphaned_file=None):
     log.info(f"Deletion report: {report_file}")
     log.info("=== Delete Helpers Task Complete ===")
 
-@service
-def restore_helpers(backup_file=None):
-    """Service wrapper - creates async task"""
-    task.create(restore_helpers_async(backup_file))
+async def delete_helpers_execute_async():
+    """Execute actual helper deletion (dry_run=False)"""
+    
+    # Default parameters for execution mode
+    dry_run = False  # Actually delete helpers
+    orphaned_file = None  # Use default file
+    
+    log.info("=== Starting Helper Deletion Process (EXECUTE MODE) ===")
+    
+    # Find the orphaned helpers file
+    results_dir = '/config/helper_analysis'
+    
+    if not os.path.exists(results_dir):
+        log.error(f"Results directory not found: {results_dir}")
+        log.error("Run pyscript.analyze_helpers first to generate the analysis files")
+        return
+    
+    if orphaned_file is None:
+        # Use the standard orphaned helpers file
+        orphaned_file = os.path.join(results_dir, 'orphaned_helpers.txt')
+        
+        if not os.path.exists(orphaned_file):
+            log.error("Orphaned helpers file not found: " + orphaned_file)
+            log.error("Run pyscript.analyze_helpers first")
+            return
+    
+    log.info(f"Using orphaned helpers file: {orphaned_file}")
+    
+    # Read the file and parse helper entities
+    helpers_to_delete = []
+    
+    try:
+        # Use task.executor for file operations in PyScript
+        content = await task.executor(lambda path: builtins.open(path, 'r', encoding='utf-8').read(), orphaned_file)
+        lines = content.splitlines()
+        
+        for line_num, line in enumerate(lines, 1):
+            line = line.strip()
+            
+            # Skip empty lines and comments
+            if not line or line.startswith('#'):
+                continue
+            
+            # Extract entity ID (everything before the first # or space)
+            entity_id = line.split('#')[0].split()[0].strip()
+            
+            # Validate entity ID format
+            if '.' in entity_id and len(entity_id.split('.')) == 2:
+                domain, entity_name = entity_id.split('.', 1)
+                if domain.isalpha() and all(c.isalnum() or c == '_' for c in entity_name):
+                    helpers_to_delete.append(entity_id)
+                else:
+                    log.warning(f"Line {line_num}: Invalid entity ID format: {entity_id}")
+            else:
+                log.warning(f"Line {line_num}: Skipping invalid line: {line}")
+    
+    except Exception as e:
+        log.error(f"Error reading orphaned helpers file: {e}")
+        return
+    
+    if not helpers_to_delete:
+        log.info("No helpers to delete found in file")
+        return
+    
+    log.info(f"Found {len(helpers_to_delete)} helpers to delete")
+    
+    # Verify helpers exist before deletion
+    existing_helpers = []
+    missing_helpers = []
+    
+    for helper in helpers_to_delete:
+        if state.get(helper):
+            existing_helpers.append(helper)
+        else:
+            missing_helpers.append(helper)
+    
+    if missing_helpers:
+        log.warning(f"The following helpers no longer exist: {', '.join(missing_helpers)}")
+    
+    if not existing_helpers:
+        log.info("No existing helpers to delete")
+        return
+    
+    # Create backup before deletion
+    backup_file = f"{results_dir}/deletion_backup.json"
+    backup_data = {
+        'dry_run': dry_run,
+        'source_file': orphaned_file,
+        'helpers_to_delete': existing_helpers,
+        'helper_states': {}
+    }
+    
+    # Backup current states
+    for helper in existing_helpers:
+        helper_state = state.get(helper)
+        if helper_state:
+            backup_data['helper_states'][helper] = {
+                'state': helper_state.state,
+                'attributes': dict(helper_state.attributes),
+                'last_changed': helper_state.last_changed.isoformat() if helper_state.last_changed else None,
+                'last_updated': helper_state.last_updated.isoformat() if helper_state.last_updated else None
+            }
+    
+    # Use task.executor for file writing
+    backup_content = json.dumps(backup_data, indent=2, ensure_ascii=False)
+    await task.executor(lambda path, content: builtins.open(path, 'w', encoding='utf-8').write(content), backup_file, backup_content)
+    
+    log.info(f"Backup created: {backup_file}")
+    
+    # Actual deletion
+    log.info("=== PERFORMING ACTUAL DELETION ===")
+    deleted_helpers = []
+    failed_deletions = []
+    
+    for helper in existing_helpers:
+        try:
+            # Use the appropriate service based on helper type
+            domain = helper.split('.')[0]
+            
+            if domain == 'input_boolean':
+                await service.call('input_boolean', 'delete', entity_id=helper)
+            elif domain == 'input_text':
+                await service.call('input_text', 'delete', entity_id=helper)
+            elif domain == 'input_number':
+                await service.call('input_number', 'delete', entity_id=helper)
+            elif domain == 'input_select':
+                await service.call('input_select', 'delete', entity_id=helper)
+            elif domain == 'input_datetime':
+                await service.call('input_datetime', 'delete', entity_id=helper)
+            elif domain == 'counter':
+                await service.call('counter', 'delete', entity_id=helper)
+            elif domain == 'timer':
+                await service.call('timer', 'delete', entity_id=helper)
+            elif domain in ['sensor', 'binary_sensor']:
+                # Template sensors require different approach
+                log.warning(f"Cannot auto-delete template sensor {helper} - manual removal from configuration required")
+                failed_deletions.append(f"{helper} - requires manual config removal")
+                continue
+            else:
+                log.warning(f"Unknown helper type for {helper} - skipping")
+                failed_deletions.append(f"{helper} - unknown type")
+                continue
+            
+            deleted_helpers.append(helper)
+            log.info(f"✓ Deleted: {helper}")
+            
+        except Exception as e:
+            log.error(f"✗ Failed to delete {helper}: {e}")
+            failed_deletions.append(f"{helper} - {str(e)}")
+    
+    # Create deletion report
+    report_file = f"{results_dir}/deletion_report.txt"
+    report_content = "HELPER DELETION REPORT\n"
+    report_content += "=" * 30 + "\n\n"
+    report_content += f"Source File: {orphaned_file}\n"
+    report_content += f"Backup File: {backup_file}\n\n"
+    
+    report_content += f"SUMMARY:\n"
+    report_content += f"  Requested Deletions: {len(existing_helpers)}\n"
+    report_content += f"  Successful Deletions: {len(deleted_helpers)}\n"
+    report_content += f"  Failed Deletions: {len(failed_deletions)}\n\n"
+    
+    if deleted_helpers:
+        report_content += "SUCCESSFULLY DELETED:\n"
+        for helper in deleted_helpers:
+            report_content += f"  ✓ {helper}\n"
+        report_content += "\n"
+    
+    if failed_deletions:
+        report_content += "FAILED DELETIONS:\n"
+        for failure in failed_deletions:
+            report_content += f"  ✗ {failure}\n"
+        report_content += "\n"
+    
+    # Use task.executor for file writing
+    await task.executor(lambda path, content: builtins.open(path, 'w', encoding='utf-8').write(content), report_file, report_content)
+    
+    log.info("=== Deletion Complete ===")
+    log.info(f"Successfully deleted: {len(deleted_helpers)} helpers")
+    if failed_deletions:
+        log.info(f"Failed deletions: {len(failed_deletions)}")
+        log.info("Check deletion report for details")
+    log.info(f"Deletion report: {report_file}")
+    log.info("=== Delete Helpers Execute Task Complete ===")
 
-async def restore_helpers_async(backup_file=None):
+@service
+def restore_helpers(**kwargs):
+    """Service wrapper - creates async task"""
+    task.create(restore_helpers_async())
+
+async def restore_helpers_async():
     """
     Restore helpers from a backup file (emergency recovery)
     
-    Args:
-        backup_file (str): Path to backup file. If None, uses the most recent backup.
+    Note: Uses most recent backup file due to PyScript limitations
     """
+    
+    backup_file = None  # Will find most recent backup
     
     log.info("=== Helper Restore Process ===")
     
