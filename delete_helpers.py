@@ -164,6 +164,14 @@ async def delete_helpers_async():
         
         await task.executor(lambda path, content: builtins.open(path, 'w', encoding='utf-8').write(content), summary_file, summary_content)
         log.info(f"Deletion preview saved to: {summary_file}")
+        
+        # Send notification to Home Assistant UI
+        notification_message = f"🗑️ Helper Deletion Preview\n\nFound {len(existing_helpers)} helpers to delete.\n\nPreview saved to:\n{summary_file}\n\nTo execute deletion, call:\npyscript.delete_helpers_execute"
+        
+        await service.call('persistent_notification', 'create', 
+                          message=notification_message,
+                          title="Helper Deletion Preview Ready",
+                          notification_id="helper_deletion_preview")
         return
     
     # Actual deletion
@@ -241,6 +249,19 @@ async def delete_helpers_async():
         log.info("Check deletion report for details")
     log.info(f"Deletion report: {report_file}")
     log.info("=== Delete Helpers Task Complete ===")
+    
+    # Send completion notification
+    if deleted_helpers or failed_deletions:
+        status_emoji = "✅" if not failed_deletions else "⚠️"
+        notification_message = f"{status_emoji} Helper Deletion Complete\n\nSuccessfully deleted: {len(deleted_helpers)} helpers"
+        if failed_deletions:
+            notification_message += f"\nFailed deletions: {len(failed_deletions)}"
+        notification_message += f"\n\nReport saved to:\n{report_file}"
+        
+        await service.call('persistent_notification', 'create',
+                          message=notification_message, 
+                          title="Helper Deletion Complete",
+                          notification_id="helper_deletion_complete")
 
 async def delete_helpers_execute_async():
     """Execute actual helper deletion (dry_run=False)"""
