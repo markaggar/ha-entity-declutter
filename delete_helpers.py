@@ -6,6 +6,9 @@
 import json
 import os
 
+# Import required modules for task.executor
+import builtins
+
 @service
 def delete_helpers(dry_run=True, orphaned_file=None, **kwargs):
     """Service version - creates async task"""
@@ -45,8 +48,9 @@ async def delete_helpers_async(dry_run=True, orphaned_file=None):
     helpers_to_delete = []
     
     try:
-        with open(orphaned_file, 'r', encoding='utf-8') as f:
-            lines = f.readlines()
+        # Use task.executor for file operations in PyScript
+        content = await task.executor(lambda path: builtins.open(path, 'r', encoding='utf-8').read(), orphaned_file)
+        lines = content.splitlines()
         
         for line_num, line in enumerate(lines, 1):
             line = line.strip()
@@ -115,8 +119,9 @@ async def delete_helpers_async(dry_run=True, orphaned_file=None):
                 'last_updated': helper_state.last_updated.isoformat() if helper_state.last_updated else None
             }
     
-    with open(backup_file, 'w', encoding='utf-8') as f:
-        json.dump(backup_data, f, indent=2, ensure_ascii=False)
+    # Use task.executor for file writing
+    backup_content = json.dumps(backup_data, indent=2, ensure_ascii=False)
+    await task.executor(lambda path, content: builtins.open(path, 'w', encoding='utf-8').write(content), backup_file, backup_content)
     
     log.info(f"Backup created: {backup_file}")
     
@@ -183,28 +188,30 @@ async def delete_helpers_async(dry_run=True, orphaned_file=None):
     
     # Create deletion report
     report_file = f"{results_dir}/deletion_report.txt"
-    with open(report_file, 'w', encoding='utf-8') as f:
-        f.write("HELPER DELETION REPORT\n")
-        f.write("=" * 30 + "\n\n")
-        f.write(f"Source File: {orphaned_file}\n")
-        f.write(f"Backup File: {backup_file}\n\n")
-        
-        f.write(f"SUMMARY:\n")
-        f.write(f"  Requested Deletions: {len(existing_helpers)}\n")
-        f.write(f"  Successful Deletions: {len(deleted_helpers)}\n")
-        f.write(f"  Failed Deletions: {len(failed_deletions)}\n\n")
-        
-        if deleted_helpers:
-            f.write("SUCCESSFULLY DELETED:\n")
-            for helper in deleted_helpers:
-                f.write(f"  ✓ {helper}\n")
-            f.write("\n")
-        
-        if failed_deletions:
-            f.write("FAILED DELETIONS:\n")
-            for failure in failed_deletions:
-                f.write(f"  ✗ {failure}\n")
-            f.write("\n")
+    report_content = "HELPER DELETION REPORT\n"
+    report_content += "=" * 30 + "\n\n"
+    report_content += f"Source File: {orphaned_file}\n"
+    report_content += f"Backup File: {backup_file}\n\n"
+    
+    report_content += f"SUMMARY:\n"
+    report_content += f"  Requested Deletions: {len(existing_helpers)}\n"
+    report_content += f"  Successful Deletions: {len(deleted_helpers)}\n"
+    report_content += f"  Failed Deletions: {len(failed_deletions)}\n\n"
+    
+    if deleted_helpers:
+        report_content += "SUCCESSFULLY DELETED:\n"
+        for helper in deleted_helpers:
+            report_content += f"  ✓ {helper}\n"
+        report_content += "\n"
+    
+    if failed_deletions:
+        report_content += "FAILED DELETIONS:\n"
+        for failure in failed_deletions:
+            report_content += f"  ✗ {failure}\n"
+        report_content += "\n"
+    
+    # Use task.executor for file writing
+    await task.executor(lambda path, content: builtins.open(path, 'w', encoding='utf-8').write(content), report_file, report_content)
     
     log.info("=== Deletion Complete ===")
     log.info(f"Successfully deleted: {len(deleted_helpers)} helpers")
@@ -257,8 +264,9 @@ async def restore_helpers_async(backup_file=None):
     log.info(f"Using backup file: {backup_file}")
     
     try:
-        with open(backup_file, 'r', encoding='utf-8') as f:
-            backup_data = json.load(f)
+        # Use task.executor for file reading
+        content = await task.executor(lambda path: builtins.open(path, 'r', encoding='utf-8').read(), backup_file)
+        backup_data = json.loads(content)
         
         helpers_to_restore = backup_data.get('helpers_to_delete', [])
         helper_states = backup_data.get('helper_states', {})
