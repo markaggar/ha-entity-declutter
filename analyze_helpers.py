@@ -113,11 +113,13 @@ def analyze_integration_config_entries():
     
     try:
         config_entries_file = '/config/.storage/core.config_entries'
+        print(f"DEBUG: Attempting to read {config_entries_file}")
         
         with open(config_entries_file, 'r', encoding='utf-8') as f:
             config_entries = json.load(f)
         entries = config_entries.get('data', {}).get('entries', [])
         print(f"Found {len(entries)} integration config entries")
+        print(f"DEBUG: Integration config analysis starting with {len(entries)} entries")
         
         helper_references = set()
         
@@ -130,6 +132,8 @@ def analyze_integration_config_entries():
                     r'\b(input_[a-z_]+\.[a-z0-9_]+)\b',
                     r'\b(counter\.[a-z0-9_]+)\b', 
                     r'\b(timer\.[a-z0-9_]+)\b',
+                    r'\b(sensor\.ca_[a-z0-9_]+)\b',  # Specifically for CA sensors
+                    r'\b(binary_sensor\.ca_[a-z0-9_]+)\b',  # Specifically for CA binary sensors
                     r'\b(sensor\.[a-z0-9_]+)\b',
                     r'\b(binary_sensor\.[a-z0-9_]+)\b'
                 ]
@@ -154,6 +158,11 @@ def analyze_integration_config_entries():
             title = entry.get('title', 'unknown')
             
             print(f"Analyzing integration: {domain} - {title} (ID: {entry_id})")
+            
+            # Debug CA entities specifically
+            if 'ca_' in str(entry).lower():
+                print(f"DEBUG: Found CA reference in integration {domain} - {title}")
+                print(f"DEBUG: Entry data snippet: {str(entry)[:200]}...")
             
             # Check all data in the config entry
             find_entities_in_value(entry, f"integration.{domain}")
