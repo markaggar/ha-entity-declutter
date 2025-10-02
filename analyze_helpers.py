@@ -54,8 +54,13 @@ def examine_entity_registry():
             config_entry_id = entity.get('config_entry_id')
             
             
-            # Traditional helpers - input_* entities are always helpers regardless of config_entry_id
+            # Traditional helpers - only if they don't have config_entry_id OR if they're legitimate UI helpers
             if entity_id.startswith(('input_', 'counter.', 'timer.')):
+                # Skip entities with config_entry_id ONLY if they're from remote integrations (ca_ prefix suggests remote)
+                if config_entry_id and entity_id.startswith('input_') and 'ca_' in entity_id:
+                    print(f"Skipping remote integration helper: {entity_id} (config_entry_id: {config_entry_id})")
+                    continue
+                
                 # Debug specific entities
                 if 'ca_' in entity_id:
                     print(f"DEBUG: Adding CA entity {entity_id} (config_entry_id: {config_entry_id}, platform: {platform})")
