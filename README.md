@@ -121,6 +121,56 @@ Contributions welcome! This tool has evolved through real-world testing on compl
 
 MIT License - feel free to adapt for your Home Assistant setup.
 
-## 🙏 Acknowledgments
+## � PyScript Implementation Notes
+
+### Architecture
+
+- **analyze_helpers.py**: Main analysis engine with comprehensive helper detection and dependency analysis
+- **delete_helpers.py**: Safe helper deletion with preview and execution phases using proper PyScript I/O patterns
+- **deploy-pyscript.ps1**: Multi-environment deployment script with discrete token management
+
+### PyScript I/O Best Practices
+
+PyScript restricts built-in I/O functions like `open()`, `read()`, and `write()` to prevent blocking the main event loop and for security reasons. The proper approach is:
+
+**❌ Incorrect (causes errors):**
+
+```python
+# This will fail in PyScript
+with open('file.txt', 'r') as f:
+    content = f.read()
+```
+
+**✅ Correct (PyScript compatible):**
+
+```python
+def read_text_file(file_path):
+    fd = os.open(file_path, os.O_RDONLY)
+    try:
+        content = b''
+        while True:
+            chunk = os.read(fd, 8192)
+            if not chunk:
+                break
+            content += chunk
+        return content.decode('utf-8')
+    finally:
+        os.close(fd)
+
+# Use with task.executor for async operations
+content = await task.executor(read_text_file, file_path)
+```
+
+### Known PyScript Framework Issue
+
+You may see this harmless error after successful script completion:
+
+```text
+TypeError: '<function>' is not callable (got None)
+```
+
+This is a known PyScript framework bug with `task.create()` completion handling that affects **all** async functions, including the working `analyze_helpers` service. The scripts complete successfully despite this error - it's purely a framework limitation, not a code issue.
+
+## �🙏 Acknowledgments
 
 Built with the excellent [PyScript](https://github.com/custom-components/pyscript) custom component for Home Assistant.

@@ -1,23 +1,258 @@
-# Home Assistant PyScript to Find Helper References - Fixed for PyScript API
+# Home Assistant PyScript to Find Helper References - PyScript I/O Compatible
 # Place this in /config/pyscript/analyze_helpers.py
 # Call with: pyscript.analyze_helpers
+#
+# Updated to use proper PyScript I/O patterns with @pyscript_executor decorators
+# instead of task.executor with helper functions to avoid PyScript I/O limitations
 
 import json
 import re
 import yaml
 import os
 
-# Import required modules for task.executor
-import builtins
+# PyScript file I/O functions using @pyscript_executor decorator
+# These are compiled to native Python and run in separate threads
+@pyscript_executor
+def read_text_file(file_path):
+    """Read text file using proper PyScript I/O pattern"""
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            return f.read(), None
+    except Exception as exc:
+        return None, exc
 
-def read_file_sync(file_path):
-    """Synchronous file reading for use with task.executor"""
-    return builtins.open(file_path, 'r', encoding='utf-8').read()
+@pyscript_executor
+def write_text_file(file_path, content):
+    """Write text file using proper PyScript I/O pattern"""
+    try:
+        with open(file_path, 'w', encoding='utf-8') as f:
+            f.write(content)
+        return True, None
+    except Exception as exc:
+        return False, exc
 
-def write_file_sync(file_path, content):
-    """Synchronous file writing for use with task.executor"""
-    with builtins.open(file_path, 'w', encoding='utf-8') as f:
-        f.write(content)
+@pyscript_executor
+def examine_entity_registry():
+    """Examine the entity registry to understand helper patterns using proper PyScript I/O"""
+    try:
+        import json
+        entity_registry_file = '/config/.storage/core.entity_registry'
+        
+        with open(entity_registry_file, 'r', encoding='utf-8') as f:
+            entity_registry = json.load(f)
+            
+        entities = entity_registry.get('data', {}).get('entities', [])
+        print(f"Entity registry contains {len(entities)} entities")
+        
+        # Look for template-related entries
+        template_sensors = []
+        helper_entities = []
+        
+        for entity in entities:
+            entity_id = entity.get('entity_id', '')
+            platform = entity.get('platform', '')
+            config_entry_id = entity.get('config_entry_id')
+            
+            
+            # Traditional helpers - but only if they don't have a config_entry_id (integration-based)
+            if entity_id.startswith(('input_', 'counter.', 'timer.')):
+                if config_entry_id:
+                    print(f"Skipping integration-based entity: {entity_id} (config_entry_id: {config_entry_id})")
+                    continue
+                    
+                helper_entities.append(entity_id)
+            
+            # Template entities (these are the missing helpers!)
+            elif platform == 'template':
+                template_sensors.append(entity_id)
+                print(f"Template helper found: {entity_id} (platform: {platform})")
+            
+            # Statistics entities (also helpers!)
+            elif platform == 'statistics':
+                template_sensors.append(entity_id)
+                print(f"Statistics helper found: {entity_id} (platform: {platform})")
+            
+            # Other helper platforms
+            elif platform in ['integral', 'derivative', 'history_stats', 'trend', 'threshold', 'utility_meter', 'group', 'combine', 'times_of_the_day', 'mold_indicator']:
+                template_sensors.append(entity_id)
+                print(f"Helper found: {entity_id} (platform: {platform})")
+            
+            # Entities without config entries (could be from configuration.yaml templates)
+            elif not config_entry_id and (entity_id.startswith('sensor.') or entity_id.startswith('binary_sensor.')):
+                template_sensors.append(entity_id)
+                print(f"Potential template helper found: {entity_id} (no config entry)")
+            
+            # Skip sensors/binary_sensors with config_entry_id - they're integration entities, not helpers
+            elif config_entry_id and (entity_id.startswith('sensor.') or entity_id.startswith('binary_sensor.')):
+                print(f"Skipping integration-based sensor: {entity_id} (config_entry_id: {config_entry_id})")
+                continue
+        
+        print(f"Found {len(template_sensors)} template helpers in registry")
+        print(f"Found {len(helper_entities)} traditional helpers in registry")
+        
+        return template_sensors + helper_entities, None
+        
+    except Exception as exc:
+        print(f"Error examining entity registry: {exc}")
+        return None, exc
+
+@pyscript_executor
+def read_config_file(file_path):
+    """Read a config file using proper PyScript I/O"""
+    import builtins
+    with builtins.open(file_path, 'r', encoding='utf-8') as f:
+        return f.read()
+
+def analyze_integration_config_entries():
+    """Analyze integration config entries to find helper references using proper PyScript I/O"""
+    import json
+    
+    try:
+        config_entries_file = '/config/.storage/core.config_entries'
+        
+        with open(config_entries_file, 'r', encoding='utf-8') as f:
+            config_entries = json.load(f)
+        entries = config_entries.get('data', {}).get('entries', [])
+        print(f"Found {len(entries)} integration config entries")
+        
+        helper_references = set()
+        
+        def find_entities_in_value(value, path="", key_name=""):
+            """Recursively search for entity references in any value"""
+            if isinstance(value, str):
+                # Look for entity IDs in strings - improved patterns to catch ca_ entities
+                import re
+                entity_patterns = [
+                    r'\b(input_[a-z_]+\.[a-z0-9_]+)\b',
+                    r'\b(counter\.[a-z0-9_]+)\b', 
+                    r'\b(timer\.[a-z0-9_]+)\b',
+                    r'\b(sensor\.[a-z0-9_]+)\b',
+                    r'\b(binary_sensor\.[a-z0-9_]+)\b'
+                ]
+                
+                for pattern in entity_patterns:
+                    matches = re.findall(pattern, value, re.IGNORECASE)
+                    for match in matches:
+                        helper_references.add(match)
+                        print(f"Found helper reference in integration config: {match} (key: {key_name}, path: {path})")
+            
+            elif isinstance(value, dict):
+                for key, nested_value in value.items():
+                    find_entities_in_value(nested_value, f"{path}.{key}" if path else key, key)
+            
+            elif isinstance(value, list):
+                for i, nested_value in enumerate(value):
+                    find_entities_in_value(nested_value, f"{path}[{i}]" if path else f"[{i}]", f"[{i}]")
+        
+        for entry in entries:
+            entry_id = entry.get('entry_id', 'unknown')
+            domain = entry.get('domain', 'unknown')
+            title = entry.get('title', 'unknown')
+            
+            print(f"Analyzing integration: {domain} - {title} (ID: {entry_id})")
+            
+            # Check all data in the config entry
+            find_entities_in_value(entry, f"integration.{domain}")
+        
+        print(f"Found {len(helper_references)} helper references in integration configs")
+        
+        return list(helper_references), None
+        
+    except Exception as exc:
+        print(f"Error analyzing integration config entries: {exc}")
+        return None, exc
+
+@pyscript_executor  
+def analyze_template_dependencies():
+    """Analyze template helpers to find their dependencies on other helpers using proper PyScript I/O"""
+    import json
+    import re
+    import os
+    
+    template_dependencies = {}
+    
+    def extract_template_dependencies(template_text):
+        """Extract entity references from template code"""
+        if not template_text:
+            return set()
+        
+        dependencies = set()
+        
+        # Patterns to find entity references in templates
+        patterns = [
+            r"states\(['\"]([a-z0-9_]+\.[a-z0-9_]+)['\"]\)",  # states('entity.id')
+            r"states\('([^']+)'\)",  # states('entity.id') - more permissive
+            r'states\("([^"]+)"\)',  # states("entity.id")
+            r"is_state\(['\"]([a-z0-9_]+\.[a-z0-9_]+)['\"]",  # is_state('entity.id')
+            r"state_attr\(['\"]([a-z0-9_]+\.[a-z0-9_]+)['\"]",  # state_attr('entity.id')
+            r"\b(input_[a-z_]+\.[a-z0-9_]+)\b",  # Direct entity references
+            r"\b(binary_sensor\.[a-z0-9_]+)\b",
+            r"\b(sensor\.[a-z0-9_]+)\b",
+            r"\b(timer\.[a-z0-9_]+)\b",
+            r"\b(counter\.[a-z0-9_]+)\b",
+            r"\b(schedule\.[a-z0-9_]+)\b"
+        ]
+        
+        for pattern in patterns:
+            matches = re.findall(pattern, template_text, re.IGNORECASE)
+            for match in matches:
+                entity_id = match if isinstance(match, str) else match[0]
+                
+                # Only include entities that could be helpers
+                helper_domains = ['binary_sensor', 'sensor', 'input_boolean', 'input_datetime', 'input_number', 'input_select', 'input_text', 'timer', 'counter', 'schedule']
+                is_helper = False
+                for domain in helper_domains:
+                    if entity_id.startswith(domain + '.'):
+                        is_helper = True
+                        break
+                if is_helper:
+                    dependencies.add(entity_id)
+        
+        return dependencies
+    
+    try:
+        # Get template helpers from config entries (UI-created)
+        config_entries_file = '/config/.storage/core.config_entries'
+        with open(config_entries_file, 'r', encoding='utf-8') as f:
+            config_entries = json.load(f)
+        
+        entries = config_entries.get('data', {}).get('entries', [])
+        for entry in entries:
+            if entry.get('domain') == 'template':
+                title = entry.get('title', '')
+                options = entry.get('options', {})
+                template_state = options.get('state', '')
+                
+                if template_state:
+                    dependencies = extract_template_dependencies(template_state)
+                    if dependencies:
+                        template_dependencies[f"UI Template: {title}"] = dependencies
+    
+    except Exception as e:
+        print(f"Error analyzing UI template dependencies: {e}")
+    
+    # Dynamically scan ALL configuration files for template dependencies
+    # This replaces the stupid hardcoded list with proper discovery
+    config_files = get_config_files()
+    
+    for config_file in config_files:
+        try:
+            # Use proper PyScript I/O pattern
+            content, error = read_text_file(config_file)
+            if error:
+                continue
+            
+            # Analyze entire file content for entity references
+            file_name = config_file.split('/')[-1]
+            dependencies = extract_template_dependencies(content)
+            if dependencies:
+                template_dependencies[f"File: {file_name}"] = dependencies
+                    
+        except Exception as e:
+            print(f"Error reading {config_file}: {e}")
+            continue
+    
+    return template_dependencies, None
 
 @service
 def analyze_helpers(**kwargs):
@@ -244,112 +479,7 @@ def is_template_or_helper_entity(entity_id):
     
     return False
 
-def examine_entity_registry():
-    """Examine the entity registry to understand helper patterns"""
-    try:
-        entity_registry_file = '/config/.storage/core.entity_registry'
-        with builtins.open(entity_registry_file, 'r', encoding='utf-8') as f:
-            import json
-            entity_registry = json.load(f)
-            
-        entities = entity_registry.get('data', {}).get('entities', [])
-        log.info(f"Entity registry contains {len(entities)} entities")
-        
-        # Look for template-related entries
-        template_sensors = []
-        helper_entities = []
-        
-        for entity in entities:
-            entity_id = entity.get('entity_id', '')
-            platform = entity.get('platform', '')
-            config_entry_id = entity.get('config_entry_id')
-            
-            # Traditional helpers
-            if entity_id.startswith(('input_', 'counter.', 'timer.')):
-                helper_entities.append(entity_id)
-            
-            # Template entities (these are the missing helpers!)
-            elif platform == 'template':
-                template_sensors.append(entity_id)
-                log.info(f"Template helper found: {entity_id} (platform: {platform})")
-            
-            # Statistics entities (also helpers!)
-            elif platform == 'statistics':
-                template_sensors.append(entity_id)
-                log.info(f"Statistics helper found: {entity_id} (platform: {platform})")
-            
-            # Other helper platforms
-            elif platform in ['integral', 'derivative', 'history_stats', 'trend', 'threshold', 'utility_meter', 'group', 'combine', 'times_of_the_day', 'mold_indicator']:
-                template_sensors.append(entity_id)
-                log.info(f"Helper found: {entity_id} (platform: {platform})")
-            
-            # Entities without config entries (could be from configuration.yaml templates)
-            elif not config_entry_id and (entity_id.startswith('sensor.') or entity_id.startswith('binary_sensor.')):
-                log.info(f"Potential config-based template: {entity_id} (no config entry)")
-        
-        log.info(f"Found {len(helper_entities)} traditional helpers")
-        log.info(f"Found {len(template_sensors)} template/statistics sensors via entity registry")
-        
-        # DEBUG: Let's see what platforms exist in the system
-        platforms_found = set()
-        for entity in entities:
-            platform = entity.get('platform', '')
-            if platform:
-                platforms_found.add(platform)
-        
-        log.info(f"DEBUG - All platforms found in entity registry: {sorted(platforms_found)}")
-        
-        # Also examine config entries for additional context
-        try:
-            config_entries_file = '/config/.storage/core.config_entries'
-            with builtins.open(config_entries_file, 'r', encoding='utf-8') as f:
-                config_entries = json.load(f)
-            
-            # Comprehensive list of all helper integrations from Home Assistant
-            helper_integration_domains = [
-                'change_device_type_of_a_switch', 'counter', 'derivative', 'filter', 
-                'generic_hygrostat', 'generic_thermostat', 'group', 'history_stats', 
-                'input_boolean', 'input_button', 'input_datetime', 'input_number', 
-                'input_select', 'input_text', 'integral', 'manual_alarm_control_panel', 
-                'min_max', 'mold_indicator', 'random', 'schedule', 'statistics', 
-                'template', 'threshold', 'timer', 'times_of_the_day', 'trend', 
-                'utility_meter'
-            ]
-            config_helper_count = 0
-            
-            for entry in config_entries.get('data', {}).get('entries', []):
-                domain = entry.get('domain', '')
-                title = entry.get('title', 'N/A')
-                
-                # Check if domain matches helper integrations or title indicates helper
-                title_lower = title.lower()
-                if (domain in helper_integration_domains or 
-                    # Template/sensor helpers
-                    any(keyword in title_lower for keyword in [
-                        'integral', 'derivative', 'threshold', 'trend', 'history', 'combine', 'mold',
-                        'template', 'statistics', 'utility meter', 'filter', 'min max', 'random'
-                    ]) or
-                    # Switch helpers
-                    'device type' in title_lower or
-                    # Thermostat helpers  
-                    any(keyword in title_lower for keyword in ['hygrostat', 'thermostat']) or
-                    # Alarm helpers
-                    'alarm control panel' in title_lower or
-                    # Schedule helpers
-                    'schedule' in title_lower):
-                    config_helper_count += 1
-                    log.info(f"Helper integration found - Domain: {domain}, Title: {title}")
-            
-            log.info(f"Found {config_helper_count} helper integrations in config entries")
-            
-        except Exception as e:
-            log.info(f"Could not examine config entries: {e}")
-        
-        return template_sensors
-            
-    except Exception as e:
-        log.info(f"Error examining entity registry: {e}")
-        return []
+# The examine_entity_registry function is now implemented with @pyscript_executor above
 
 def extract_template_dependencies(template_text):
     """Extract entity references from template code"""
@@ -410,8 +540,8 @@ def discover_template_files():
     # Get list of template entities from entity registry to guide our search
     try:
         registry_file = '/config/.storage/core.entity_registry'
-        with builtins.open(registry_file, 'r', encoding='utf-8') as f:
-            registry = json.load(f)
+        content = read_text_file(registry_file)
+        registry = json.loads(content)
         
         template_entity_names = set()
         entities = registry.get('data', {}).get('entities', [])
@@ -466,8 +596,7 @@ def discover_template_files():
                         continue
                     
                     try:
-                        with builtins.open(file_path, 'r', encoding='utf-8') as f:
-                            content = f.read()
+                        content = read_text_file(file_path)
                         
                         # Check if file contains template definitions
                         content_lower = content.lower()
@@ -499,78 +628,7 @@ def discover_template_files():
     
     return template_files
 
-def analyze_template_dependencies():
-    """Analyze template helpers to find their dependencies on other helpers"""
-    template_dependencies = {}
-    
-    try:
-        # Get template helpers from config entries (UI-created)
-        config_entries_file = '/config/.storage/core.config_entries'
-        with builtins.open(config_entries_file, 'r', encoding='utf-8') as f:
-            config_entries = json.load(f)
-        
-        entries = config_entries.get('data', {}).get('entries', [])
-        for entry in entries:
-            if entry.get('domain') == 'template':
-                title = entry.get('title', '')
-                options = entry.get('options', {})
-                template_state = options.get('state', '')
-                
-                if template_state:
-                    dependencies = extract_template_dependencies(template_state)
-                    if dependencies:
-                        template_dependencies[f"UI Template: {title}"] = dependencies
-                        dep_list = list(dependencies)
-                        dep_list.sort()
-                        log.info(f"Template '{title}' depends on: {', '.join(dep_list)}")
-    
-    except Exception as e:
-        log.info(f"Error analyzing UI template dependencies: {e}")
-    
-    # Automatically discover template files
-    template_files = discover_template_files()
-    
-    if not template_files:
-        log.info("No template files discovered, falling back to common locations")
-        # Fallback to common paths if discovery failed
-        template_files = [
-            '/config/ai_image_reminders.yaml',
-            '/config/template_sensors.yaml', 
-            '/config/water_monitor_package.yaml',
-            '/config/water_monitor_simulation_package_integration.yaml',
-            '/config/packages/templates.yaml',
-            '/config/packages/ai_image_reminders.yaml',
-            '/config/packages/water_monitor_package.yaml'
-        ]
-    
-    # Analyze discovered template files - simplified approach
-    log.info(f"Analyzing {len(template_files)} discovered template files")
-    
-    for config_file in template_files:
-        try:
-            log.info(f"Processing template file: {config_file}")
-            with builtins.open(config_file, 'r', encoding='utf-8') as f:
-                content = f.read()
-            
-            log.info(f"File size: {len(content)} chars, has template markers: {'{{' in content}")
-            
-            # Simplified approach: analyze entire file content for entity references
-            file_name = config_file.split('/')[-1]
-            dependencies = extract_template_dependencies(content)
-            if dependencies:
-                template_dependencies[f"File: {file_name}"] = dependencies
-                dep_list = list(dependencies)
-                dep_list.sort()
-                log.info(f"File '{file_name}' references {len(dependencies)} helper entities: {', '.join(dep_list[:10])}")
-            else:
-                log.info(f"File '{file_name}' contains no helper entity references")
-                    
-        except Exception as e:
-            log.info(f"Error reading {config_file}: {e}")
-            continue
-    
-    log.info(f"Template analysis complete: {len(template_dependencies)} templates with dependencies")
-    return template_dependencies
+# The analyze_template_dependencies function is now implemented with @pyscript_executor above
 
 async def analyze_dashboard_dependencies():
     """Analyze Lovelace dashboards to find entity references"""
@@ -629,7 +687,11 @@ async def analyze_dashboard_dependencies():
                 continue
                 
             log.info(f"Analyzing dashboard file: {dash_file}")
-            content = await task.executor(lambda path: builtins.open(path, 'r', encoding='utf-8').read(), dash_file)
+            # Use proper PyScript I/O pattern
+            content, error = read_text_file(dash_file)
+            if error:
+                log.info(f"Error reading {dash_file}: {error}")
+                continue
             
             # Extract entities from dashboard content
             entities = extract_dashboard_entities(content)
@@ -696,12 +758,8 @@ def extract_dashboard_entities(dashboard_content):
     return entities
 
 def extract_entities_from_template_string(template_str):
-    """Extract entity IDs from template strings using full regex"""
+    """Extract entity IDs from template strings AND regular YAML strings"""
     if not isinstance(template_str, str):
-        return set()
-    
-    if not (("{{" in template_str and "}}" in template_str) or 
-            ("{%" in template_str and "%}" in template_str)):
         return set()
     
     entities = set()
@@ -713,7 +771,9 @@ def extract_entities_from_template_string(template_str):
         # Direct entity state access (states.domain.entity)
         r'states\.([a-z_]+)\.([a-z0-9_]+)(?:\.state|\.attributes)',
         # Entity ID references in quotes
-        r'[\'"]([a-z_]+\.[a-z0-9_]+)[\'"]'
+        r'[\'"]([a-z_]+\.[a-z0-9_]+)[\'"]',
+        # CRITICAL FIX: Direct entity IDs without quotes (like entity_id: input_boolean.sim_auto_busy_calm)
+        r'\b([a-z_]+\.[a-z0-9_]+)\b'
     ]
     
     for pattern in patterns:
@@ -733,23 +793,55 @@ def extract_entities_from_template_string(template_str):
     return entities
 
 def analyze_yaml_content(content, file_path):
-    """Analyze YAML content for entity references"""
+    """Analyze YAML content for entity references - both templates AND direct entity_id references"""
     entities = set()
     
     try:
         yaml_data = yaml.safe_load(content)
         if yaml_data:
+            # Check templates in the serialized YAML
             yaml_str = yaml.dump(yaml_data)
             entities.update(extract_entities_from_template_string(yaml_str))
             
-            # Also check individual string values for templates
+            # Enhanced traversal to find direct entity_id references
             def traverse_dict(obj):
                 if isinstance(obj, dict):
                     for key, value in obj.items():
                         if isinstance(value, str):
+                            # Check for template references
                             entities.update(extract_entities_from_template_string(value))
+                            
+                            # CRITICAL: Check for entity references in ALL string values
+                            # This catches entity_id: input_boolean.sim_auto_busy_calm patterns
+                            if isinstance(value, str) and '.' in value:
+                                # Check if it looks like an entity ID (domain.entity_name)
+                                parts = value.split('.')
+                                if len(parts) == 2:
+                                    domain, entity_name = parts
+                                    # Basic validation - domain should be letters, entity_name alphanumeric with underscores
+                                    if (domain.replace('_', '').isalpha() and 
+                                        entity_name.replace('_', '').replace('-', '').isalnum() and
+                                        len(domain) > 0 and len(entity_name) > 0):
+                                        entities.add(value)
+                                    
+                        elif isinstance(value, list):
+                            # Handle lists - check all items for entity IDs
+                            for item in value:
+                                if isinstance(item, str) and '.' in item:
+                                    parts = item.split('.')
+                                    if len(parts) == 2:
+                                        domain, entity_name = parts
+                                        if (domain.replace('_', '').isalpha() and 
+                                            entity_name.replace('_', '').replace('-', '').isalnum() and
+                                            len(domain) > 0 and len(entity_name) > 0):
+                                            entities.add(item)
+                                elif isinstance(item, (dict, list)):
+                                    traverse_dict(item)
+                            # Also traverse the list structure
+                            traverse_dict(value)
                         elif isinstance(value, (dict, list)):
                             traverse_dict(value)
+                            
                 elif isinstance(obj, list):
                     for item in obj:
                         if isinstance(item, str):
@@ -771,11 +863,20 @@ def get_config_files():
     config_dir = '/config'
     config_files = []
     
-    # YAML files in config root
-    for filename in ['configuration.yaml', 'automations.yaml', 'scripts.yaml', 'scenes.yaml']:
-        full_path = os.path.join(config_dir, filename)
-        if os.path.isfile(full_path):
-            config_files.append(full_path)
+    # ALL YAML files in config root (not just the basic 4!)
+    # This was the bug - we were missing package files in root directory
+    try:
+        for file in os.listdir(config_dir):
+            if file.endswith('.yaml') or file.endswith('.yml'):
+                full_path = os.path.join(config_dir, file)
+                if os.path.isfile(full_path):
+                    config_files.append(full_path)
+    except Exception as e:
+        # Fallback to the original 4 files if directory listing fails
+        for filename in ['configuration.yaml', 'automations.yaml', 'scripts.yaml', 'scenes.yaml']:
+            full_path = os.path.join(config_dir, filename)
+            if os.path.isfile(full_path):
+                config_files.append(full_path)
     
     # Package files
     packages_dir = os.path.join(config_dir, 'packages')
@@ -783,7 +884,21 @@ def get_config_files():
         for root, dirs, files in os.walk(packages_dir):
             for file in files:
                 if file.endswith('.yaml') or file.endswith('.yml'):
-                    config_files.append(os.path.join(root, file))
+                    full_path = os.path.join(root, file)
+                    config_files.append(full_path)
+                    # Write debug info to file if we find the specific water monitor package
+                    if 'water_monitor_simulation' in file:
+                        try:
+                            with open('/config/scan_debug.txt', 'a', encoding='utf-8') as f:
+                                f.write(f"Found water monitor package: {full_path}\n")
+                        except:
+                            pass
+    else:
+        try:
+            with open('/config/scan_debug.txt', 'a', encoding='utf-8') as f:
+                f.write(f"Packages directory does not exist: {packages_dir}\n")
+        except:
+            pass
     
     # Blueprint files
     blueprints_dir = os.path.join(config_dir, 'blueprints')
@@ -918,6 +1033,7 @@ def generate_lovelace_cards(truly_orphaned_helpers, dashboard_only_helpers, help
     
     return yaml_content
 
+
 @time_trigger("startup")
 def analyze_helpers_startup():
     """Run analysis at startup"""
@@ -950,14 +1066,18 @@ async def analyze_helpers_async():
     # Let's examine the entity registry to understand helper patterns
     template_entities_from_registry = []
     try:
-        template_entities_from_registry = await task.executor(lambda: examine_entity_registry())
-        if template_entities_from_registry is None:
+        registry_result, error = examine_entity_registry()
+        if error:
+            log.info(f"Could not examine entity registry: {error}")
             template_entities_from_registry = []
+        else:
+            template_entities_from_registry = registry_result or []
     except Exception as e:
         log.info(f"Could not examine entity registry: {e}")
     
     # Filter to just helpers - now including template entities from registry
-    helpers = []
+    # Use set to prevent duplicates automatically
+    helpers_set = set()
     
     # Traditional helpers
     for entity_id in entity_ids:
@@ -965,19 +1085,22 @@ async def analyze_helpers_async():
             entity_id.startswith('counter.') or 
             entity_id.startswith('timer.') or
             entity_id.startswith('variable.')):
-            helpers.append(entity_id)
+            helpers_set.add(entity_id)
     
     # Template helpers from entity registry (this is the missing piece!)
     for entity_id in template_entities_from_registry:
         if entity_id in entity_ids:  # Make sure it still exists
-            helpers.append(entity_id)
+            helpers_set.add(entity_id)
     
     # Legacy template sensor detection for any remaining ones
     for entity_id in entity_ids:
         if ((entity_id.startswith('sensor.') or entity_id.startswith('binary_sensor.')) and
-            entity_id not in helpers and
+            entity_id not in helpers_set and
             is_template_or_helper_entity(entity_id)):
-            helpers.append(entity_id)
+            helpers_set.add(entity_id)
+    
+    # Convert back to list for compatibility with rest of code
+    helpers = list(helpers_set)
     
     # Separate traditional helpers from templated sensors
     templated_sensors = [h for h in helpers if h.startswith(('sensor.', 'binary_sensor.'))]
@@ -985,15 +1108,30 @@ async def analyze_helpers_async():
     # Analyze template dependencies
     log.info("=== Analyzing Template Dependencies ===")
     try:
-        template_dependencies = await task.executor(lambda: analyze_template_dependencies())
-        if template_dependencies is None:
-            log.info("Template analysis returned None")
+        template_result, error = analyze_template_dependencies()
+        if error:
+            log.info(f"Template analysis error: {error}")
             template_dependencies = {}
         else:
+            template_dependencies = template_result or {}
             log.info(f"Template analysis returned {type(template_dependencies)} with {len(template_dependencies)} items")
     except Exception as e:
         log.error(f"Template dependency analysis failed: {e}")
         template_dependencies = {}
+    
+    # Analyze integration config entries for helper references
+    log.info("=== Analyzing Integration Config Entries ===")
+    try:
+        integration_referenced_entities, error = analyze_integration_config_entries()
+        if error:
+            log.info(f"Integration config analysis error: {error}")
+            integration_referenced_entities = []
+        else:
+            integration_referenced_entities = integration_referenced_entities or []
+            log.info(f"Integration configs reference {len(integration_referenced_entities)} helper entities")
+    except Exception as e:
+        log.info(f"Integration config analysis error: {e}")
+        integration_referenced_entities = []
     
     log.info(f"Found {len(helpers)} total helpers to analyze:")
     log.info(f"  - Traditional helpers: {len(helpers) - len(templated_sensors)}")
@@ -1054,33 +1192,33 @@ async def analyze_helpers_async():
     
     log.info(f"Analyzing {len(config_files)} configuration files")
     
+
+    
     for file_path in config_files:
         try:
             # Try different approaches for file reading in PyScript
             content = None
             try:
-                # Method 1: Direct file reading with task.executor and lambda
-                content = await task.executor(lambda path: builtins.open(path, 'r', encoding='utf-8').read(), file_path)
-            except:
-                try:
-                    # Method 2: Use actual built-in open if available
-                    with builtins.open(file_path, 'r', encoding='utf-8') as f:
-                        content = f.read()
-                except:
-                    # Method 3: Log that file reading is not available
-                    log.warning(f"File reading not available for {file_path}")
-                    continue
+                # Use proper PyScript I/O with @pyscript_executor
+                content = read_config_file(file_path)
+            except Exception as e:
+                print(f"Failed to read file {file_path}: {e}")
+                continue
                     
             if content:
                 entities_in_file = analyze_yaml_content(content, file_path)
                 all_referenced_entities.update(entities_in_file)
                 config_referenced_entities.update(entities_in_file)
-                
+
                 # Also check for direct entity ID references (not in templates)
+                direct_matches = []
                 for helper in helpers:
                     if helper in content:
                         all_referenced_entities.add(helper)
                         config_referenced_entities.add(helper)
+                        direct_matches.append(helper)
+                
+
                         
         except Exception as e:
             log.warning(f"Error reading {file_path}: {e}")
@@ -1090,6 +1228,10 @@ async def analyze_helpers_async():
     # Include template dependencies in the reference check
     all_referenced_entities.update(template_referenced_entities)
     log.info(f"After including template dependencies: {len(all_referenced_entities)} total references")
+    
+    # Include integration config dependencies in the reference check
+    all_referenced_entities.update(integration_referenced_entities)
+    log.info(f"After including integration config dependencies: {len(all_referenced_entities)} total references")
     
     # Include dashboard dependencies in the reference check
     all_referenced_entities.update(dashboard_referenced_entities)
@@ -1204,23 +1346,61 @@ async def analyze_helpers_async():
     
     json_file = os.path.join(results_dir, 'helper_analysis.json')
     try:
-        # Use task.executor with lambda for file writing
+        # Use proper PyScript I/O pattern
         json_content = json.dumps(detailed_report, indent=2, ensure_ascii=False)
-        await task.executor(lambda path, content: builtins.open(path, 'w', encoding='utf-8').write(content), json_file, json_content)
+        success, error = write_text_file(json_file, json_content)
+        if error:
+            log.error(f"Failed to write JSON report: {error}")
     except Exception as e:
         log.error(f"Failed to write JSON report: {e}")
     
-    # Save orphaned helpers list
-    orphaned_file = os.path.join(results_dir, 'orphaned_helpers.txt')
+    # Save TRULY ORPHANED helpers list (for actual cleanup)
+    truly_orphaned_file = os.path.join(results_dir, 'truly_orphaned_helpers.txt')
     try:
-        orphaned_content = "# Potentially Orphaned Helpers\n"
-        orphaned_content += f"# Found {len(unreferenced_helpers)} helpers with no references\n"
+        orphaned_content = "# Truly Orphaned Helpers (SAFE TO DELETE)\n"
+        orphaned_content += f"# Found {len(truly_orphaned_helpers)} helpers with NO references anywhere\n"
+        orphaned_content += "# These helpers are not used in config files, templates, or dashboards\n"
         orphaned_content += "# Edit this file to remove helpers you want to keep\n"
         orphaned_content += "# Then use pyscript.delete_helpers to process this file\n\n"
+        for helper in sorted(truly_orphaned_helpers):
+            orphaned_content += f"{helper}\n"
+        
+        success, error = write_text_file(truly_orphaned_file, orphaned_content)
+        if error:
+            log.error(f"Failed to write truly orphaned helpers file: {error}")
+    except Exception as e:
+        log.error(f"Failed to write truly orphaned helpers file: {e}")
+    
+    # Save DASHBOARD-ONLY helpers list (for review, not deletion)
+    dashboard_only_file = os.path.join(results_dir, 'dashboard_only_helpers.txt')
+    try:
+        dashboard_content = "# Dashboard-Only Helpers (REVIEW BEFORE DELETING)\n"
+        dashboard_content += f"# Found {len(dashboard_only_helpers)} helpers used ONLY in dashboards\n"
+        dashboard_content += "# These helpers are not used in config files or templates\n"
+        dashboard_content += "# They may be legitimately used for dashboard display purposes\n"
+        dashboard_content += "# Review carefully before considering for deletion\n\n"
+        for helper in sorted(dashboard_only_helpers):
+            dashboard_content += f"{helper}\n"
+        
+        success, error = write_text_file(dashboard_only_file, dashboard_content)
+        if error:
+            log.error(f"Failed to write dashboard-only helpers file: {error}")
+    except Exception as e:
+        log.error(f"Failed to write dashboard-only helpers file: {e}")
+    
+    # Keep the old orphaned_helpers.txt for backward compatibility (all unreferenced)
+    orphaned_file = os.path.join(results_dir, 'orphaned_helpers.txt')
+    try:
+        orphaned_content = "# All Unreferenced Helpers (DEPRECATED - use truly_orphaned_helpers.txt)\n"
+        orphaned_content += f"# This file contains both truly orphaned AND dashboard-only helpers\n"
+        orphaned_content += f"# Use 'truly_orphaned_helpers.txt' for safe cleanup instead\n"
+        orphaned_content += f"# Use 'dashboard_only_helpers.txt' for dashboard review\n\n"
         for helper in sorted(unreferenced_helpers):
             orphaned_content += f"{helper}\n"
         
-        await task.executor(lambda path, content: builtins.open(path, 'w', encoding='utf-8').write(content), orphaned_file, orphaned_content)
+        success, error = write_text_file(orphaned_file, orphaned_content)
+        if error:
+            log.error(f"Failed to write orphaned helpers file: {error}")
     except Exception as e:
         log.error(f"Failed to write orphaned helpers file: {e}")
     
@@ -1247,7 +1427,9 @@ async def analyze_helpers_async():
             if len(referenced_helpers) > 10:
                 summary_content += f"  ... and {len(referenced_helpers) - 10} more\n"
         
-        await task.executor(lambda path, content: builtins.open(path, 'w', encoding='utf-8').write(content), summary_file, summary_content)
+        success, error = write_text_file(summary_file, summary_content)
+        if error:
+            log.error(f"Failed to write summary report: {error}")
     except Exception as e:
         log.error(f"Failed to write summary report: {e}")
     
@@ -1255,24 +1437,30 @@ async def analyze_helpers_async():
     lovelace_file = os.path.join(results_dir, 'helper_review_cards.yaml')
     try:
         lovelace_content = generate_lovelace_cards(truly_orphaned_helpers, dashboard_only_helpers, helper_details)
-        await task.executor(lambda path, content: builtins.open(path, 'w', encoding='utf-8').write(content), lovelace_file, lovelace_content)
-        log.info(f"Generated Lovelace review cards: {lovelace_file}")
+        success, error = write_text_file(lovelace_file, lovelace_content)
+        if error:
+            log.error(f"Failed to write Lovelace cards file: {error}")
+        else:
+            log.info(f"Generated Lovelace review cards: {lovelace_file}")
     except Exception as e:
         log.error(f"Failed to write Lovelace cards file: {e}")
     
     # Update status sensor
     try:
-        sensor.helper_analysis_status = 'complete'
         sensor_attributes = {
             'total_helpers': len(helpers),
             'referenced_count': len(referenced_helpers),
-            'orphaned_count': len(unreferenced_helpers),
+            'unreferenced_count': len(unreferenced_helpers),
+            'truly_orphaned_count': len(truly_orphaned_helpers),
+            'dashboard_only_count': len(dashboard_only_helpers),
             'json_report': json_file,
+            'truly_orphaned_file': truly_orphaned_file,
+            'dashboard_only_file': dashboard_only_file,
             'orphaned_file': orphaned_file,
             'summary_file': summary_file
         }
         
-        # Set attributes using the new PyScript way
+        # Set attributes using the proper PyScript way
         state.set('sensor.helper_analysis_status', value='complete', 
                  new_attributes=sensor_attributes)
                  

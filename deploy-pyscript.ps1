@@ -14,7 +14,7 @@ $environments = @{
     "dev" = @{
         Host = "10.0.0.55"
         PyScriptPath = "\\10.0.0.55\config\pyscript"
-        Token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiI5NDFmMjE5OGJkN2M0NGZhOWZkODVhMmEyODRkZGRiMCIsImlhdCI6MTcyNzUyOTE4NywiZXhwIjoyMDQyODg5MTg3fQ.PQCXKoFqUYRR2LJwxsUxSFDhTnyMdTgWZF6HYZHq6HM"
+        Token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiIwYjRjNGRjY2JkZmE0MDlmODRhZmY3ZjhiZGJmYzdlNSIsImlhdCI6MTc1OTM2Mzk0MSwiZXhwIjoyMDc0NzIzOTQxfQ.ZlT1aOXxJIqp_GUrfjrzspl470RpYwB3QfjwPxyM_UA"
         EnvVar = "HA_DEV_TOKEN"
     }
     "prod" = @{
@@ -163,10 +163,16 @@ if ($TestRun -and -not [string]::IsNullOrWhiteSpace($Token)) {
             $script:deploymentFailed = $true
         }
         
-        if ($pyscriptServices -and $pyscriptServices.delete_helpers) {
-            Write-Host "✓ pyscript.delete_helpers service found" -ForegroundColor Green
+        if ($pyscriptServices -and $pyscriptServices.delete_helpers_preview) {
+            Write-Host "✓ pyscript.delete_helpers_preview service found" -ForegroundColor Green
         } else {
-            Write-Warning "pyscript.delete_helpers service not found."
+            Write-Warning "pyscript.delete_helpers_preview service not found."
+        }
+        
+        if ($pyscriptServices -and $pyscriptServices.delete_helpers_execute) {
+            Write-Host "✓ pyscript.delete_helpers_execute service found" -ForegroundColor Green
+        } else {
+            Write-Warning "pyscript.delete_helpers_execute service not found."
         }
     } catch {
         Write-Warning "Failed to check services: $($_.Exception.Message)"
@@ -257,8 +263,8 @@ if ($script:deploymentFailed) {
     Write-Host "1. Go to Developer Tools → Services in Home Assistant" -ForegroundColor DarkGray
     Write-Host "2. Run service: pyscript.analyze_helpers" -ForegroundColor DarkGray
     Write-Host "3. Check /config/helper_analysis/ for results" -ForegroundColor DarkGray
-    Write-Host "4. Edit orphaned_helpers_[timestamp].txt to remove helpers you want to keep" -ForegroundColor DarkGray
-    Write-Host "5. Run service: pyscript.delete_helpers with dry_run: false" -ForegroundColor DarkGray
+    Write-Host "4. Preview deletion: pyscript.delete_helpers_preview (dry run)" -ForegroundColor DarkGray
+    Write-Host "5. Execute deletion: pyscript.delete_helpers_execute (actual deletion)" -ForegroundColor DarkGray
 }
 
 exit 0

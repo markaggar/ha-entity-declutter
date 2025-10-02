@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "home-assistant-dev": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@smithery/mcp-server-home-assistant@latest"
+      ],
+      "env": {
+        "HA_BASE_URL": "http://10.0.0.55:8123",
+        "HA_ACCESS_TOKEN": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiIwYjRjNGRjY2JkZmE0MDlmODRhZmY3ZjhiZGJmYzdlNSIsImlhdCI6MTc1OTM2Mzk0MSwiZXhwIjoyMDc0NzIzOTQxfQ.ZlT1aOXxJIqp_GUrfjrzspl470RpYwB3QfjwPxyM_UA"
+      }
+    }
+  }
+}
