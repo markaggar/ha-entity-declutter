@@ -59,8 +59,17 @@ def examine_entity_registry():
                 if config_entry_id:
                     print(f"Skipping integration-based entity: {entity_id} (config_entry_id: {config_entry_id})")
                     continue
+                
+                # Debug specific entities
+                if 'ca_' in entity_id:
+                    print(f"DEBUG: Adding CA entity {entity_id} (config_entry_id: {config_entry_id}, platform: {platform})")
                     
                 helper_entities.append(entity_id)
+            
+            # FIRST: Skip integration entities with config_entry_id (except template/statistics platforms which are helpers)
+            elif config_entry_id and (entity_id.startswith(('sensor.', 'binary_sensor.')) and platform not in ['template', 'statistics']):
+                print(f"Skipping integration entity: {entity_id} (config_entry_id: {config_entry_id}, platform: {platform})")
+                continue
             
             # Template entities (these are the missing helpers!)
             elif platform == 'template':
@@ -71,11 +80,6 @@ def examine_entity_registry():
             elif platform == 'statistics':
                 template_sensors.append(entity_id)
                 print(f"Statistics helper found: {entity_id} (platform: {platform})")
-            
-            # Skip sensors/binary_sensors with config_entry_id - they're integration entities, not helpers
-            elif config_entry_id and (entity_id.startswith('sensor.') or entity_id.startswith('binary_sensor.')):
-                print(f"Skipping integration-based sensor: {entity_id} (config_entry_id: {config_entry_id})")
-                continue
             
             # Other helper platforms
             elif platform in ['integral', 'derivative', 'history_stats', 'trend', 'threshold', 'utility_meter', 'group', 'combine', 'times_of_the_day', 'mold_indicator']:
