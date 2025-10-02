@@ -72,6 +72,11 @@ def examine_entity_registry():
                 template_sensors.append(entity_id)
                 print(f"Statistics helper found: {entity_id} (platform: {platform})")
             
+            # Skip sensors/binary_sensors with config_entry_id - they're integration entities, not helpers
+            elif config_entry_id and (entity_id.startswith('sensor.') or entity_id.startswith('binary_sensor.')):
+                print(f"Skipping integration-based sensor: {entity_id} (config_entry_id: {config_entry_id})")
+                continue
+            
             # Other helper platforms
             elif platform in ['integral', 'derivative', 'history_stats', 'trend', 'threshold', 'utility_meter', 'group', 'combine', 'times_of_the_day', 'mold_indicator']:
                 template_sensors.append(entity_id)
@@ -81,11 +86,6 @@ def examine_entity_registry():
             elif not config_entry_id and (entity_id.startswith('sensor.') or entity_id.startswith('binary_sensor.')):
                 template_sensors.append(entity_id)
                 print(f"Potential template helper found: {entity_id} (no config entry)")
-            
-            # Skip sensors/binary_sensors with config_entry_id - they're integration entities, not helpers
-            elif config_entry_id and (entity_id.startswith('sensor.') or entity_id.startswith('binary_sensor.')):
-                print(f"Skipping integration-based sensor: {entity_id} (config_entry_id: {config_entry_id})")
-                continue
         
         print(f"Found {len(template_sensors)} template helpers in registry")
         print(f"Found {len(helper_entities)} traditional helpers in registry")
