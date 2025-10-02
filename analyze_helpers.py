@@ -1178,6 +1178,7 @@ async def analyze_helpers_async():
     # Find all entity references in configuration files
     all_referenced_entities = set()
     config_referenced_entities = set()
+    config_entity_file_mapping = {}  # Maps entity -> list of files
     config_files = get_config_files()
     
     # Also check for lovelace configuration
@@ -1209,6 +1210,14 @@ async def analyze_helpers_async():
                 entities_in_file = analyze_yaml_content(content, file_path)
                 all_referenced_entities.update(entities_in_file)
                 config_referenced_entities.update(entities_in_file)
+                
+                # Track which file each entity came from
+                filename = os.path.basename(file_path) if file_path else 'unknown'
+                for entity in entities_in_file:
+                    if entity not in config_entity_file_mapping:
+                        config_entity_file_mapping[entity] = []
+                    if filename not in config_entity_file_mapping[entity]:
+                        config_entity_file_mapping[entity].append(filename)
 
                 # Also check for direct entity ID references (not in templates)
                 direct_matches = []
@@ -1217,6 +1226,12 @@ async def analyze_helpers_async():
                         all_referenced_entities.add(helper)
                         config_referenced_entities.add(helper)
                         direct_matches.append(helper)
+                        
+                        # Track the file reference for direct matches too
+                        if helper not in config_entity_file_mapping:
+                            config_entity_file_mapping[helper] = []
+                        if filename not in config_entity_file_mapping[helper]:
+                            config_entity_file_mapping[helper].append(filename)
                 
 
                         
@@ -1275,7 +1290,11 @@ async def analyze_helpers_async():
             
             # Check config file references
             if helper in config_referenced_entities:
-                reference_sources['config_files'].append('configuration_files')
+                # Use actual filenames from the mapping
+                if helper in config_entity_file_mapping:
+                    reference_sources['config_files'].extend(config_entity_file_mapping[helper])
+                else:
+                    reference_sources['config_files'].append('configuration_files')
                 reference_sources['total_references'] += 1
             
             # Check template references  
