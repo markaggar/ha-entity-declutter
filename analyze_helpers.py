@@ -54,16 +54,11 @@ def examine_entity_registry():
             config_entry_id = entity.get('config_entry_id')
             
             
-            # Traditional helpers - only if they don't have config_entry_id OR if they're legitimate UI helpers
+            # Traditional helpers - input_*, counter, timer are always considered helpers regardless of source
             if entity_id.startswith(('input_', 'counter.', 'timer.')):
-                # Skip entities with config_entry_id ONLY if they're from remote integrations (ca_ prefix suggests remote)
-                if config_entry_id and entity_id.startswith('input_') and 'ca_' in entity_id:
-                    print(f"Skipping remote integration helper: {entity_id} (config_entry_id: {config_entry_id})")
-                    continue
-                
                 # Debug specific entities
                 if 'ca_' in entity_id:
-                    print(f"DEBUG: Adding CA entity {entity_id} (config_entry_id: {config_entry_id}, platform: {platform})")
+                    print(f"DEBUG: Adding CA helper entity {entity_id} (config_entry_id: {config_entry_id}, platform: {platform})")
                     
                 helper_entities.append(entity_id)
             
@@ -108,18 +103,20 @@ def read_config_file(file_path):
     with builtins.open(file_path, 'r', encoding='utf-8') as f:
         return f.read()
 
+@pyscript_executor
 def analyze_integration_config_entries():
     """Analyze integration config entries to find helper references using proper PyScript I/O"""
     import json
     
     try:
+        print("DEBUG: Starting integration config analysis...")
         config_entries_file = '/config/.storage/core.config_entries'
         print(f"DEBUG: Attempting to read {config_entries_file}")
         
         with open(config_entries_file, 'r', encoding='utf-8') as f:
             config_entries = json.load(f)
         entries = config_entries.get('data', {}).get('entries', [])
-        print(f"Found {len(entries)} integration config entries")
+        print(f"DEBUG: Found {len(entries)} integration config entries")
         print(f"DEBUG: Integration config analysis starting with {len(entries)} entries")
         
         helper_references = set()
@@ -130,19 +127,21 @@ def analyze_integration_config_entries():
                 # Look for entity IDs in strings - improved patterns to catch ca_ entities
                 import re
                 entity_patterns = [
-                    r'\b(input_[a-z_]+\.[a-z0-9_]+)\b',
-                    r'\b(counter\.[a-z0-9_]+)\b', 
-                    r'\b(timer\.[a-z0-9_]+)\b',
-                    r'\b(sensor\.ca_[a-z0-9_]+)\b',  # Specifically for CA sensors
-                    r'\b(binary_sensor\.ca_[a-z0-9_]+)\b',  # Specifically for CA binary sensors
-                    r'\b(sensor\.[a-z0-9_]+)\b',
-                    r'\b(binary_sensor\.[a-z0-9_]+)\b'
+                    # More permissive patterns to catch entity IDs in JSON values
+                    r'(input_[a-zA-Z_][a-zA-Z0-9_]*\.[a-zA-Z0-9_]+)',
+                    r'(counter\.[a-zA-Z0-9_]+)',
+                    r'(timer\.[a-zA-Z0-9_]+)',
+                    r'(sensor\.[a-zA-Z0-9_]+)',  # This should catch sensor.ca_droplet_flow_rate
+                    r'(binary_sensor\.[a-zA-Z0-9_]+)',  # This should catch binary_sensor.ca_hot_water_running
+                    r'(schedule\.[a-zA-Z0-9_]+)'
                 ]
                 
                 for pattern in entity_patterns:
                     matches = re.findall(pattern, value, re.IGNORECASE)
                     for match in matches:
                         helper_references.add(match)
+                        if 'ca_' in match.lower():
+                            print(f"*** FOUND CA ENTITY in config: {match} (key: {key_name}, path: {path}) ***")
                         print(f"Found helper reference in integration config: {match} (key: {key_name}, path: {path})")
             
             elif isinstance(value, dict):
@@ -160,15 +159,36 @@ def analyze_integration_config_entries():
             
             print(f"Analyzing integration: {domain} - {title} (ID: {entry_id})")
             
-            # Debug CA entities specifically
-            if 'ca_' in str(entry).lower():
-                print(f"DEBUG: Found CA reference in integration {domain} - {title}")
-                print(f"DEBUG: Entry data snippet: {str(entry)[:200]}...")
+            # Debug all integration entries to see their structure
+            if domain in ['homeassistant', 'template', 'group'] or 'remote' in title.lower():
+                print(f"DEBUG: Integration {domain} - {title} structure:")
+                entry_str = str(entry)
+                if 'ca_' in entry_str.lower():
+                    print(f"DEBUG: *** FOUND CA REFERENCE in {domain} - {title} ***")
+                    # Show more context around CA references
+                    lines = entry_str.split(',')
+                    for i, line in enumerate(lines):
+                        if 'ca_' in line.lower():
+                            context_start = max(0, i-2)
+                            context_end = min(len(lines), i+3)
+                            print(f"DEBUG: CA context: {lines[context_start:context_end]}")
+                            break
+                else:
+                    print(f"DEBUG: Entry sample: {entry_str[:300]}...") 
             
             # Check all data in the config entry
             find_entities_in_value(entry, f"integration.{domain}")
         
-        print(f"Found {len(helper_references)} helper references in integration configs")
+        print(f"DEBUG: Found {len(helper_references)} helper references in integration configs")
+        
+        # DEBUG: Manual search for CA entities
+        config_str = str(config_entries).lower()
+        if 'ca_droplet_flow_rate' in config_str:
+            print("DEBUG: *** MANUAL SEARCH FOUND ca_droplet_flow_rate in config_entries ***")
+        if 'ca_hot_water_running' in config_str:
+            print("DEBUG: *** MANUAL SEARCH FOUND ca_hot_water_running in config_entries ***")
+        if 'ca_location_mode' in config_str:
+            print("DEBUG: *** MANUAL SEARCH FOUND ca_location_mode in config_entries ***")
         
         return list(helper_references), None
         
@@ -1116,6 +1136,8 @@ async def analyze_helpers_async():
     # Convert back to list for compatibility with rest of code
     helpers = list(helpers_set)
     
+
+    
     # Separate traditional helpers from templated sensors
     templated_sensors = [h for h in helpers if h.startswith(('sensor.', 'binary_sensor.'))]
     
@@ -1134,16 +1156,21 @@ async def analyze_helpers_async():
         template_dependencies = {}
     
     # Analyze integration config entries for helper references
+    print("DEBUG: Starting integration config analysis section")
     log.info("=== Analyzing Integration Config Entries ===")
     try:
+        print("DEBUG: About to call analyze_integration_config_entries()")
         integration_referenced_entities, error = analyze_integration_config_entries()
+        print(f"DEBUG: analyze_integration_config_entries() returned: entities={integration_referenced_entities}, error={error}")
         if error:
             log.info(f"Integration config analysis error: {error}")
             integration_referenced_entities = []
         else:
             integration_referenced_entities = integration_referenced_entities or []
             log.info(f"Integration configs reference {len(integration_referenced_entities)} helper entities")
+            print(f"DEBUG: Final integration_referenced_entities: {integration_referenced_entities}")
     except Exception as e:
+        print(f"DEBUG: Exception in integration config analysis: {e}")
         log.info(f"Integration config analysis error: {e}")
         integration_referenced_entities = []
     
@@ -1259,8 +1286,15 @@ async def analyze_helpers_async():
     log.info(f"After including template dependencies: {len(all_referenced_entities)} total references")
     
     # Include integration config dependencies in the reference check
+    print(f"DEBUG: About to add {len(integration_referenced_entities)} integration entities to {len(all_referenced_entities)} existing")
+    ca_entities_in_integration = [entity for entity in integration_referenced_entities if '.ca_' in entity]
+    if ca_entities_in_integration:
+        print(f"DEBUG: CA entities found in integration configs: {ca_entities_in_integration}")
+    else:
+        print("DEBUG: No CA entities found in integration configs")
+    
     all_referenced_entities.update(integration_referenced_entities)
-    log.info(f"After including integration config dependencies: {len(all_referenced_entities)} total references")
+    print(f"DEBUG: After including integration config dependencies: {len(all_referenced_entities)} total references")
     
     # Include dashboard dependencies in the reference check
     all_referenced_entities.update(dashboard_referenced_entities)
@@ -1292,7 +1326,12 @@ async def analyze_helpers_async():
     
     for helper in helpers:
         try:
-            helper_state = state.get(helper)
+            # Safely get helper state
+            try:
+                helper_state = state.get(helper)
+            except Exception as state_error:
+                print(f"Warning: Could not get state for {helper}: {state_error}")
+                helper_state = None
             
             # Track where this helper is referenced
             reference_sources = {
@@ -1326,7 +1365,12 @@ async def analyze_helpers_async():
                 else:
                     reference_sources['dashboards'].append('lovelace_dashboards')
                 reference_sources['total_references'] += 1
-            
+                
+            # Check integration config references
+            if integration_referenced_entities and helper in integration_referenced_entities:
+                reference_sources['config_files'].append('integration_configs')
+                reference_sources['total_references'] += 1
+
             # Determine helper category
             helper_category = 'orphaned'
             if reference_sources['total_references'] > 0:
@@ -1394,7 +1438,7 @@ async def analyze_helpers_async():
         orphaned_content += f"# Found {len(truly_orphaned_helpers)} helpers with NO references anywhere\n"
         orphaned_content += "# These helpers are not used in config files, templates, or dashboards\n"
         orphaned_content += "# Edit this file to remove helpers you want to keep\n"
-        orphaned_content += "# Then use pyscript.delete_helpers to process this file\n\n"
+        orphaned_content += "# Then use pyscript.delete_helpers_preview (dry run) or pyscript.delete_helpers_execute to process this file\n\n"
         for helper in sorted(truly_orphaned_helpers):
             orphaned_content += f"{helper}\n"
         
@@ -1424,11 +1468,14 @@ async def analyze_helpers_async():
     # Keep the old orphaned_helpers.txt for backward compatibility (all unreferenced)
     orphaned_file = os.path.join(results_dir, 'orphaned_helpers.txt')
     try:
+        # Combine truly orphaned and dashboard-only helpers
+        all_orphaned_helpers = truly_orphaned_helpers + dashboard_only_helpers
+        
         orphaned_content = "# All Unreferenced Helpers (DEPRECATED - use truly_orphaned_helpers.txt)\n"
         orphaned_content += f"# This file contains both truly orphaned AND dashboard-only helpers\n"
         orphaned_content += f"# Use 'truly_orphaned_helpers.txt' for safe cleanup instead\n"
         orphaned_content += f"# Use 'dashboard_only_helpers.txt' for dashboard review\n\n"
-        for helper in sorted(unreferenced_helpers):
+        for helper in sorted(all_orphaned_helpers):
             orphaned_content += f"{helper}\n"
         
         success, error = write_text_file(orphaned_file, orphaned_content)
@@ -1444,12 +1491,13 @@ async def analyze_helpers_async():
         summary_content += "=" * 50 + "\n\n"
         summary_content += f"Total helpers analyzed: {len(helpers)}\n"
         summary_content += f"Helpers with references: {len(referenced_helpers)}\n"
-        summary_content += f"Potentially orphaned: {len(unreferenced_helpers)}\n"
+        all_orphaned_helpers = truly_orphaned_helpers + dashboard_only_helpers
+        summary_content += f"Potentially orphaned: {len(all_orphaned_helpers)}\n"
         summary_content += f"Configuration files analyzed: {len(config_files)}\n\n"
         
-        if unreferenced_helpers:
+        if all_orphaned_helpers:
             summary_content += "POTENTIALLY ORPHANED HELPERS:\n"
-            for helper in sorted(unreferenced_helpers):
+            for helper in sorted(all_orphaned_helpers):
                 summary_content += f"  - {helper}\n"
             summary_content += "\n"
         
@@ -1483,7 +1531,7 @@ async def analyze_helpers_async():
         sensor_attributes = {
             'total_helpers': len(helpers),
             'referenced_count': len(referenced_helpers),
-            'unreferenced_count': len(unreferenced_helpers),
+            'unreferenced_count': len(truly_orphaned_helpers) + len(dashboard_only_helpers),
             'truly_orphaned_count': len(truly_orphaned_helpers),
             'dashboard_only_count': len(dashboard_only_helpers),
             'json_report': json_file,

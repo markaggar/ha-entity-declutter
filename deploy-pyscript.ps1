@@ -162,18 +162,6 @@ if ($TestRun -and -not [string]::IsNullOrWhiteSpace($Token)) {
             Write-Warning "pyscript.analyze_helpers service not found. PyScript may not have loaded the script."
             $script:deploymentFailed = $true
         }
-        
-        if ($pyscriptServices -and $pyscriptServices.delete_helpers_preview) {
-            Write-Host "✓ pyscript.delete_helpers_preview service found" -ForegroundColor Green
-        } else {
-            Write-Warning "pyscript.delete_helpers_preview service not found."
-        }
-        
-        if ($pyscriptServices -and $pyscriptServices.delete_helpers_execute) {
-            Write-Host "✓ pyscript.delete_helpers_execute service found" -ForegroundColor Green
-        } else {
-            Write-Warning "pyscript.delete_helpers_execute service not found."
-        }
     } catch {
         Write-Warning "Failed to check services: $($_.Exception.Message)"
         $script:deploymentFailed = $true
@@ -263,8 +251,7 @@ if ($script:deploymentFailed) {
     Write-Host "1. Go to Developer Tools → Services in Home Assistant" -ForegroundColor DarkGray
     Write-Host "2. Run service: pyscript.analyze_helpers" -ForegroundColor DarkGray
     Write-Host "3. Check /config/helper_analysis/ for results" -ForegroundColor DarkGray
-    Write-Host "4. Preview deletion: pyscript.delete_helpers_preview (dry run)" -ForegroundColor DarkGray
-    Write-Host "5. Execute deletion: pyscript.delete_helpers_execute (actual deletion)" -ForegroundColor DarkGray
+    Write-Host "4. Use the Home Assistant dashboard to manually delete helpers as needed" -ForegroundColor DarkGray
 }
 
 exit 0

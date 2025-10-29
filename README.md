@@ -1,6 +1,6 @@
 # HA Entity Declutter
 
-A comprehensive Home Assistant helper analysis and cleanup system built with PyScript. This tool helps you identify and safely remove unused helpers, reducing clutter in your Home Assistant configuration.
+A comprehensive Home Assistant helper analysis system built with PyScript. This tool helps you identify unused helpers and provides detailed reports for manual cleanup via the Home Assistant dashboard.
 
 ## 🎯 Features
 
@@ -12,7 +12,7 @@ A comprehensive Home Assistant helper analysis and cleanup system built with PyS
   - **Truly Orphaned**: No references found anywhere
 - **Auto-Generated Lovelace Cards**: Creates ready-to-use dashboard cards for easy review
 - **Multi-Environment Support**: Separate dev and production deployments
-- **Safe Deletion Tools**: Backup and restore functionality with dry-run mode
+- **Manual Deletion Guide**: Comprehensive reports for safe manual cleanup
 - **Reference Source Tracking**: Shows exactly where each helper is used
 
 ## 📊 Results
@@ -46,9 +46,9 @@ On a production system with 484 helpers, this tool achieved:
    mkdir helper_analysis
    ```
 
-4. **Download and copy the Python scripts**:
-   - Download `analyze_helpers.py` and `delete_helpers.py` from this repository
-   - Copy both files to your `/config/pyscript/` directory
+4. **Download and copy the Python script**:
+   - Download `analyze_helpers.py` from this repository
+   - Copy the file to your `/config/pyscript/` directory
 
 5. **Restart Home Assistant** to load the PyScript components
 
@@ -74,12 +74,12 @@ The tool generates ready-to-use Lovelace cards showing:
 
 Simply copy the contents of `helper_review_cards.yaml` into a new dashboard card.
 
-## 🧹 Safe Deletion
+## 🧹 Manual Cleanup
 
 1. **Review the analysis**: Check `helper_summary.txt` and the generated dashboard cards
-2. **Edit the list**: Remove any helpers you want to keep from `orphaned_helpers.txt`
-3. **Dry run**: `pyscript.delete_helpers` with `dry_run: true`
-4. **Execute**: `pyscript.delete_helpers` with `dry_run: false`
+2. **Navigate to Settings → Device & Services → Helpers** in your Home Assistant dashboard
+3. **Search for helpers** from the orphaned_helpers.txt list
+4. **Delete helpers manually** after confirming they're not needed
 
 ## 🔧 Configuration
 
@@ -109,7 +109,6 @@ The tool detects all Home Assistant helper integrations:
 ## 🛠️ Files
 
 - **`analyze_helpers.py`**: Main analysis script - copy to `/config/pyscript/`
-- **`delete_helpers.py`**: Safe deletion script - copy to `/config/pyscript/`  
 - **`deploy-pyscript.ps1`**: Development deployment tool (for contributors)
 - **`README.md`**: This documentation
 
@@ -126,7 +125,6 @@ MIT License - feel free to adapt for your Home Assistant setup.
 ### Architecture
 
 - **analyze_helpers.py**: Main analysis engine with comprehensive helper detection and dependency analysis
-- **delete_helpers.py**: Safe helper deletion with preview and execution phases using proper PyScript I/O patterns
 - **deploy-pyscript.ps1**: Multi-environment deployment script with discrete token management
 
 ### PyScript I/O Best Practices
@@ -169,7 +167,7 @@ You may see this harmless error after successful script completion:
 TypeError: '<function>' is not callable (got None)
 ```
 
-This is a known PyScript framework bug with `task.create()` completion handling that affects **all** async functions, including the working `analyze_helpers` service. The scripts complete successfully despite this error - it's purely a framework limitation, not a code issue.
+This is a known PyScript framework bug with `task.create()` completion handling that affects **all** async functions, including the working `analyze_helpers` service. The script completes successfully despite this error - it's purely a framework limitation, not a code issue.
 
 ## �🙏 Acknowledgments
 
